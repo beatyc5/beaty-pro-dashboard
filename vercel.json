@@ -1,0 +1,34 @@
+{
+  "framework": "nextjs",
+  "redirects": [
+    {
+      "source": "/login",
+      "destination": "/auth/signin",
+      "permanent": true
+    },
+    {
+      "source": "/signup",
+      "destination": "/auth/signup",
+      "permanent": true
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "origin-when-cross-origin"
+        }
+      ]
+    }
+  ]
+}
