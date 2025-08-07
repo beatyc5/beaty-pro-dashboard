@@ -50,7 +50,7 @@ pglite-debug.log
 *.log
 
 # large pdf directories
-public/pdfs/
+# public/pdfs/ - commented out to allow deployment
 
 # deployment configs (keep only essential ones)
 Dockerfile
