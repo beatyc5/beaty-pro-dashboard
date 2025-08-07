@@ -1,0 +1,500 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
+import { ZoomIn, ZoomOut, RotateCcw, ArrowLeft, Plus, Minus, RefreshCw, Zap } from 'lucide-react';
+
+// Add type declaration for PDF.js on window object
+declare global {
+  interface Window {
+    pdfjsLib: any;
+  }
+}
+
+// This is our Ship Drawings page with PDF viewer functionality
+export default function ShipDrawingsPage() {
+  // State variables for PDF viewer
+  const [pdfDocs, setPdfDocs] = useState<string[]>([]);
+  const [selectedPdf, setSelectedPdf] = useState<string>('DK_02.pdf');
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const [scale, setScale] = useState<number>(2.0); // Start with 200% zoom for better visibility
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [zoomPercent, setZoomPercent] = useState<number>(200);
+
+  // Use refs for panning state to avoid re-renders during pan operations
+  const startXRef = useRef<number>(0);
+  const startYRef = useRef<number>(0);
+  const translateXRef = useRef<number>(0);
+  const translateYRef = useRef<number>(0);
+
+  // Refs for canvas and PDF rendering
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapperDivRef = useRef<HTMLDivElement>(null);
+  const pdfDocRef = useRef<any>(null);
+  const pageRenderingRef = useRef<boolean>(false);
+  const pageNumRef = useRef<number>(1);
+  const pageNumPendingRef = useRef<number | null>(null);
+
+  // Load available PDF list on component mount
+  useEffect(() => {
+    // List of available PDFs from the public/pdfs folder
+    const availablePdfs = [
+      'DK_00.pdf', 'DK_01.pdf', 'DK_02.pdf', 'DK_03.pdf',
+      'DK_04.pdf', 'DK_05.pdf', 'DK_06.pdf', 'DK_07.pdf',
+      'DK_08.pdf', 'DK_09.pdf', 'DK_10.pdf', 'DK_11.pdf',
+      'DK_12.pdf', 'DK_14.pdf', 'DK_15.pdf', 'DK_16.pdf',
+      'DK_17.pdf', 'DK_18.pdf', 'DK_19.pdf', 'DK_20.pdf',
+      'DK_TT.pdf', 'DK_TW.pdf'
+    ];
+    
+    setPdfDocs(availablePdfs);
+    if (availablePdfs.length > 0) {
+      setSelectedPdf(availablePdfs[0]);
+    }
+  }, []);
+
+  // Load PDF.js library dynamically to avoid SSR issues in Next.js
+  useEffect(() => {
+    // Load PDF.js library dynamically
+    const loadPdfLibrary = async () => {
+      try {
+        // Import both the main library and the worker
+        const pdfjs = await import('pdfjs-dist');
+        const pdfWorker = await import('pdfjs-dist/build/pdf.worker.mjs');
+        
+        // Create a blob URL for the worker
+        const workerBlob = new Blob([pdfWorker.default], { type: 'application/javascript' });
+        const workerUrl = URL.createObjectURL(workerBlob);
+        
+        // Set the worker source to our blob URL (avoids CORS issues)
+        pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+        
+        // Add to window object for easier access
+        // @ts-ignore
+        window.pdfjsLib = pdfjs;
+        console.log('PDF.js library and worker loaded successfully');
+      } catch (err) {
+        console.error('Error loading PDF.js library:', err);
+        setError('Failed to load PDF viewer library: ' + (err instanceof Error ? err.message : String(err)));
+      }
+    };
+
+    loadPdfLibrary();
+  }, []);
+
+  // Effect to load the selected PDF
+  useEffect(() => {
+    if (!selectedPdf || typeof window === 'undefined' || !window.pdfjsLib) return;
+    
+    const loadSelectedPdf = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        // Use the local path to the PDF in the public folder
+        const pdfUrl = `/pdfs/${selectedPdf}`;
+        console.log('Loading PDF from:', pdfUrl);
+        
+        // Load PDF document using the window.pdfjsLib reference
+        // @ts-ignore
+        const loadingTask = window.pdfjsLib.getDocument(pdfUrl);
+        const pdf = await loadingTask.promise;
+        pdfDocRef.current = pdf;
+        
+        // Reset view settings
+        pageNumRef.current = 1;
+        setScale(2.0);
+        setZoomPercent(200);
+        
+        // Reset translation using refs
+        translateXRef.current = 0;
+        translateYRef.current = 0;
+        
+        // Make sure to reset the canvas transform as well
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.style.transform = 'translate(0px, 0px)';
+        }
+        
+        // Render the first page
+        renderPage(1);
+      } catch (err) {
+        console.error('Error loading PDF:', err);
+        setError('Failed to load the selected PDF drawing');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadSelectedPdf();
+  }, [selectedPdf]);
+
+  // Function to render a specific page
+  const renderPage = async (pageNum: number) => {
+    if (pageRenderingRef.current) {
+      pageNumPendingRef.current = pageNum;
+      return;
+    }
+    
+    pageRenderingRef.current = true;
+    setError(null); // Clear any previous errors
+    
+    try {
+      // Check if we're in a browser environment
+      if (typeof window === 'undefined') {
+        throw new Error('Cannot render PDF in server-side environment');
+      }
+      
+      const canvas = canvasRef.current;
+      if (!canvas || !pdfDocRef.current) {
+        throw new Error('Canvas or PDF document reference not available');
+      }
+      
+      // Get the page first
+      const page = await pdfDocRef.current.getPage(pageNum);
+      
+      // Force a reflow before working with canvas
+      document.body.offsetHeight;
+      
+      // Set explicit dimensions on the canvas
+      const viewport = page.getViewport({ scale });
+      const pixelRatio = window.devicePixelRatio || 1;
+      
+      // Set display size (css pixels)
+      canvas.style.width = `${Math.floor(viewport.width)}px`;
+      canvas.style.height = `${Math.floor(viewport.height)}px`;
+      
+      // Set actual size in memory (scaled to device)
+      canvas.width = Math.floor(viewport.width * pixelRatio);
+      canvas.height = Math.floor(viewport.height * pixelRatio);
+      
+      console.log('Canvas size set:', canvas.width, 'x', canvas.height);
+      console.log('Canvas element exists:', !!canvas);
+      
+      // Give browser a chance to update
+      await new Promise(resolve => setTimeout(resolve, 10));
+      
+      // Try to get context with different approaches
+      let ctx = null;
+      
+      // First approach: with alpha
+      try {
+        ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true });
+        console.log('Got context with alpha:', !!ctx);
+      } catch (e) {
+        console.warn('Failed to get context with alpha:', e);
+      }
+      
+      // Second approach: without options
+      if (!ctx) {
+        try {
+          ctx = canvas.getContext('2d');
+          console.log('Got context without options:', !!ctx);
+        } catch (e) {
+          console.warn('Failed to get context without options:', e);
+        }
+      }
+      
+      // Final check
+      if (!ctx) {
+        throw new Error('Failed to get canvas context after multiple attempts');
+      }
+      
+      // Reset the canvas and clear it
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // Use identity transform for rendering
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Set up the render context
+      const renderContext = {
+        canvasContext: ctx,
+        viewport: viewport
+      };
+
+      // Apply transform to wrapper div, not the canvas (this is key to proper rendering)
+      if (wrapperDivRef.current) {
+        wrapperDivRef.current.style.transform = `translate(${translateXRef.current}px, ${translateYRef.current}px)`;
+      }
+
+      // Render the page
+      const renderTask = page.render(renderContext);
+      
+      // Update page number and wait for render to complete
+      pageNumRef.current = pageNum;
+      await renderTask.promise;
+      
+      // Check if there's a pending page
+      if (pageNumPendingRef.current !== null && pageNumPendingRef.current !== pageNum) {
+        const pendingPage = pageNumPendingRef.current;
+        pageNumPendingRef.current = null;
+        renderPage(pendingPage);
+      } else {
+        pageRenderingRef.current = false;
+      }
+    } catch (err) {
+      console.error('Failed to render PDF page:', err);
+      setError('Failed to render PDF page: ' + (err instanceof Error ? err.message : String(err)));
+      pageRenderingRef.current = false;
+    }
+  };
+
+  // Zoom in/out functions
+  const zoomIn = () => {
+    const newScale = scale * 1.2;
+    setScale(newScale);
+    setZoomPercent(Math.round(newScale * 100));
+    
+    // Re-render with new scale
+    if (pageNumRef.current) {
+      renderPage(pageNumRef.current);
+    }
+  };
+
+  const zoomOut = () => {
+    const newScale = scale / 1.2;
+    setScale(newScale);
+    setZoomPercent(Math.round(newScale * 100));
+    
+    // Re-render with new scale
+    if (pageNumRef.current) {
+      renderPage(pageNumRef.current);
+    }
+  };
+
+  const resetZoom = () => {
+    // Reset zoom to default
+    setScale(1.0);
+    setZoomPercent(100);
+    
+    // Reset position
+    translateXRef.current = 0;
+    translateYRef.current = 0;
+    
+    if (wrapperDivRef.current) {
+      wrapperDivRef.current.style.transform = 'translate(0px, 0px)';
+    }
+    
+    // Re-render
+    if (pageNumRef.current) {
+      renderPage(pageNumRef.current);
+    }
+  };
+  
+  // Function to display error on canvas
+  const showPDFError = (pdfName: string) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Set canvas size
+    canvas.width = 600;
+    canvas.height = 400;
+    
+    // Clear canvas
+    ctx.fillStyle = '#1e293b'; // slate-800
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw error text
+    ctx.font = '20px Arial';
+    ctx.fillStyle = '#ef4444'; // red-500
+    ctx.fillText(`Failed to load PDF: ${pdfName}`, 50, 200);
+  };
+
+  // Pan functionality with improved responsiveness using refs
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    
+    // Set initial position
+    startXRef.current = e.clientX;
+    startYRef.current = e.clientY;
+    
+    // Change cursor to grabbing
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.style.cursor = 'grabbing';
+    }
+    
+    console.log('Mouse down at:', e.clientX, e.clientY);
+  };
+
+  // Use a wrapper div ref to directly manipulate the DOM for smoother panning
+  // handleMouseMove function
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    e.preventDefault(); // Prevent default browser behavior
+    e.stopPropagation(); // Stop event bubbling
+    
+    // Calculate the movement delta
+    const dx = e.clientX - startXRef.current;
+    const dy = e.clientY - startYRef.current;
+    
+    // Update the translation values directly in refs
+    const newTranslateX = translateXRef.current + dx;
+    const newTranslateY = translateYRef.current + dy;
+    
+    // Store the new translation values
+    translateXRef.current = newTranslateX;
+    translateYRef.current = newTranslateY;
+    
+    // Apply transform directly to DOM for immediate response (no React re-render)
+    if (wrapperDivRef.current) {
+      wrapperDivRef.current.style.transform = `translate(${newTranslateX}px, ${newTranslateY}px)`;
+    }
+    
+    // Update current position refs for the next move
+    startXRef.current = e.clientX;
+    startYRef.current = e.clientY;
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    e.preventDefault(); // Prevent default behavior
+    e.stopPropagation(); // Stop event bubbling
+    
+    setIsDragging(false);
+    
+    // Cursor should be grab when not dragging
+    const canvas = canvasRef.current;
+    if (canvas) {
+      canvas.style.cursor = 'grab';
+      // No need to parse transform values since we've been tracking them in refs
+      console.log('Final position saved:', translateXRef.current, translateYRef.current);
+    }
+  };
+  
+  // Handle mouse leave as mouse up
+  const handleMouseLeave = (e: React.MouseEvent) => {
+    console.log('Mouse leave');
+    if (isDragging) {
+      handleMouseUp(e);
+    }
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen bg-slate-900">
+      {/* Header */}
+      <header className="bg-slate-900 border-b border-slate-700 px-4 py-3 flex items-center sticky top-0 z-50">
+        <div className="flex items-center space-x-4">
+          <Link href="/" className="text-slate-400 hover:text-white">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div className="flex items-center space-x-2">
+            <div className="w-6 h-6 bg-orange-500 rounded flex items-center justify-center">
+              <Zap className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-medium">
+              <span className="text-green-500">Beaty</span>
+              <span className="text-orange-500">.pro</span>
+            </span>
+          </div>
+        </div>
+        
+        <div className="flex-grow flex justify-center">
+          <h1 className="text-xl font-semibold text-white">Ship Drawings</h1>
+        </div>
+        
+        {/* Empty div to balance the layout */}
+        <div className="w-24"></div>
+      </header>
+
+      {/* Main content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left sidebar */}
+        <div className="w-64 bg-slate-800 border-r border-slate-700 p-4 flex flex-col">
+          <h2 className="text-lg font-semibold text-slate-100 mb-4">Available Drawings</h2>
+          
+          {/* PDF selection dropdown */}
+          <div className="mb-4">
+            <label htmlFor="pdf-select" className="block text-sm font-medium text-slate-300 mb-1">
+              Select Deck Drawing:
+            </label>
+            <select
+              id="pdf-select"
+              className="w-full bg-slate-700 border border-slate-600 text-slate-100 rounded px-3 py-2"
+              value={selectedPdf}
+              onChange={(e) => setSelectedPdf(e.target.value)}
+            >
+              {pdfDocs.map((pdf) => (
+                <option key={pdf} value={pdf}>
+                  {pdf.replace('.pdf', '')}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          {/* Zoom controls */}
+          <div className="mb-4">
+            <h3 className="text-md font-medium text-slate-300 mb-2">Zoom Controls</h3>
+            <div className="flex space-x-2">
+              <button 
+                onClick={zoomIn} 
+                className="bg-slate-700 hover:bg-slate-600 text-slate-100 px-3 py-2 rounded flex items-center"
+              >
+                <Plus size={16} className="mr-1" />
+                <span>In</span>
+              </button>
+              <button 
+                onClick={zoomOut} 
+                className="bg-slate-700 hover:bg-slate-600 text-slate-100 px-3 py-2 rounded flex items-center"
+              >
+                <Minus size={16} className="mr-1" />
+                <span>Out</span>
+              </button>
+              <button 
+                onClick={resetZoom} 
+                className="bg-slate-700 hover:bg-slate-600 text-slate-100 px-3 py-2 rounded"
+              >
+                Reset
+              </button>
+            </div>
+            <div className="mt-2 text-center text-slate-300">
+              Zoom: {Math.round(scale * 100)}%
+            </div>
+          </div>
+        </div>
+
+        {/* Main PDF viewer area */}
+        <div className="flex-1 overflow-hidden flex flex-col relative">
+          {loading && (
+            <div className="absolute inset-0 bg-slate-900 bg-opacity-75 flex items-center justify-center z-10">
+              <RefreshCw size={48} className="animate-spin text-blue-500" />
+              <span className="ml-2 text-slate-100">Loading PDF...</span>
+            </div>
+          )}
+          
+          {error && (
+            <div className="absolute inset-0 bg-slate-900 bg-opacity-75 flex items-center justify-center z-10">
+              <div className="bg-red-900 text-white p-4 rounded shadow-lg max-w-lg">
+                <h3 className="text-lg font-semibold mb-2">Error</h3>
+                <p>{error}</p>
+              </div>
+            </div>
+          )}
+          
+          <div className="flex-1 relative overflow-hidden">
+            {/* PDF Canvas */}
+            <div
+              ref={wrapperDivRef}
+              className="absolute inset-0 overflow-visible"
+              style={{ transform: `translate(${translateXRef.current || 0}px, ${translateYRef.current || 0}px)` }}
+            >
+              <canvas 
+                ref={canvasRef} 
+                className="mx-auto"
+                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={handleMouseLeave}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

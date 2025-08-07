@@ -1,0 +1,892 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabase';
+
+export async function POST(request: NextRequest) {
+  try {
+    const { message, queryType, systemType, instructions } = await request.json();
+
+    // Get comprehensive data from all systems with proper pagination
+    const allSystemsData = await getAllSystemsDataWithPagination();
+    
+    // Log the parameters we received
+    console.log('Claude API parameters:', { message, queryType, systemType, instructions });
+    
+    // Send to Claude for reasoning with complete dataset
+    const claudeResponse = await queryClaude(message, allSystemsData, systemType, instructions);
+
+    return NextResponse.json({ 
+      content: claudeResponse,
+      data: allSystemsData 
+    });
+  } catch (error) {
+    console.error('Claude API error:', error);
+    return NextResponse.json(
+      { error: 'Failed to process request' },
+      { status: 500 }
+    );
+  }
+}
+
+async function getAllSystemsDataWithPagination() {
+  try {
+    console.log('Starting comprehensive data collection from all systems...');
+    
+    // Get data from all 6 systems with full pagination
+    const [wifiData, pbxData, tvData, cctvData, extractedData, cabinSwitchData] = await Promise.all([
+      getCompleteWifiData(),
+      getCompletePbxData(),
+      getCompleteTvData(),
+      getCompleteCctvData(),
+      getCompleteExtractedData(),
+      getCompleteCabinSwitchData()
+    ]);
+
+    console.log('Data collection completed. Processing cross-system analysis...');
+
+    // Perform cross-system analysis
+    const crossSystemAnalysis = analyzeCrossSystemData({
+      wifi: wifiData,
+      pbx: pbxData,
+      tv: tvData,
+      cctv: cctvData,
+      extracted: extractedData,
+      cabinSwitch: cabinSwitchData
+    });
+
+    return {
+      systems: {
+        wifi: wifiData,
+        pbx: pbxData,
+        tv: tvData,
+        cctv: cctvData,
+        extracted: extractedData,
+        cabinSwitch: cabinSwitchData
+      },
+      crossSystem: crossSystemAnalysis,
+      summary: {
+        totalRecords: wifiData.totalRecords + pbxData.totalRecords + tvData.totalRecords + 
+                     cctvData.totalRecords + extractedData.totalRecords + cabinSwitchData.totalRecords,
+        systems: ['WiFi', 'PBX', 'TV', 'CCTV', 'Extracted', 'Cabin Switch'],
+        lastUpdated: new Date().toISOString()
+      }
+    };
+  } catch (error) {
+    console.error('Error in comprehensive data collection:', error);
+    return null;
+  }
+}
+
+async function getCompleteWifiData() {
+  try {
+    let allWifiData: any[] = [];
+    let offset = 0;
+    const limit = 1000;
+    let hasMore = true;
+    let queryCount = 0;
+
+    console.log('Fetching complete WiFi data...');
+
+    while (hasMore && queryCount < 20) { // Increased limit for larger datasets
+      queryCount++;
+      const { data: chunkData, error: chunkError } = await supabase
+        .from('wgc_databasewgc_database_wifi')
+        .select('*')
+        .range(offset, offset + limit - 1);
+
+      if (chunkError) {
+        console.error(`WiFi chunk ${queryCount} error:`, chunkError);
+        break;
+      }
+
+      if (chunkData && chunkData.length > 0) {
+        allWifiData = allWifiData.concat(chunkData);
+        offset += limit;
+        hasMore = chunkData.length === limit;
+        console.log(`WiFi chunk ${queryCount}: ${chunkData.length} records (Total: ${allWifiData.length})`);
+      } else {
+        hasMore = false;
+      }
+    }
+
+    console.log(`WiFi data complete: ${allWifiData.length} total records`);
+
+    // Analyze WiFi data
+    const analysis = analyzeWifiData(allWifiData);
+    
+    return {
+      totalRecords: allWifiData.length,
+      rawData: allWifiData,
+      analysis: analysis
+    };
+  } catch (error) {
+    console.error('Error in WiFi data collection:', error);
+    return { totalRecords: 0, rawData: [], analysis: {} };
+  }
+}
+
+async function getCompletePbxData() {
+  try {
+    let allPbxData: any[] = [];
+    let offset = 0;
+    const limit = 1000;
+    let hasMore = true;
+    let queryCount = 0;
+
+    console.log('Fetching complete PBX data...');
+
+    while (hasMore && queryCount < 20) {
+      queryCount++;
+      const { data: chunkData, error: chunkError } = await supabase
+        .from('wgc_databasewgc_database_pbx')
+        .select('*')
+        .range(offset, offset + limit - 1);
+
+      if (chunkError) {
+        console.error(`PBX chunk ${queryCount} error:`, chunkError);
+        break;
+      }
+
+      if (chunkData && chunkData.length > 0) {
+        allPbxData = allPbxData.concat(chunkData);
+        offset += limit;
+        hasMore = chunkData.length === limit;
+        console.log(`PBX chunk ${queryCount}: ${chunkData.length} records (Total: ${allPbxData.length})`);
+      } else {
+        hasMore = false;
+      }
+    }
+
+    console.log(`PBX data complete: ${allPbxData.length} total records`);
+
+    // Analyze PBX data
+    const analysis = analyzePbxData(allPbxData);
+    
+    return {
+      totalRecords: allPbxData.length,
+      rawData: allPbxData,
+      analysis: analysis
+    };
+  } catch (error) {
+    console.error('Error in PBX data collection:', error);
+    return { totalRecords: 0, rawData: [], analysis: {} };
+  }
+}
+
+async function getCompleteTvData() {
+  try {
+    let allTvData: any[] = [];
+    let offset = 0;
+    const limit = 1000;
+    let hasMore = true;
+    let queryCount = 0;
+
+    console.log('Fetching complete TV data...');
+
+    while (hasMore && queryCount < 20) {
+      queryCount++;
+      const { data: chunkData, error: chunkError } = await supabase
+        .from('wgc_databasewgc_database_tv')
+        .select('*')
+        .range(offset, offset + limit - 1);
+
+      if (chunkError) {
+        console.error(`TV chunk ${queryCount} error:`, chunkError);
+        break;
+      }
+
+      if (chunkData && chunkData.length > 0) {
+        allTvData = allTvData.concat(chunkData);
+        offset += limit;
+        hasMore = chunkData.length === limit;
+        console.log(`TV chunk ${queryCount}: ${chunkData.length} records (Total: ${allTvData.length})`);
+      } else {
+        hasMore = false;
+      }
+    }
+
+    console.log(`TV data complete: ${allTvData.length} total records`);
+
+    // Analyze TV data
+    const analysis = analyzeTvData(allTvData);
+    
+    return {
+      totalRecords: allTvData.length,
+      rawData: allTvData,
+      analysis: analysis
+    };
+  } catch (error) {
+    console.error('Error in TV data collection:', error);
+    return { totalRecords: 0, rawData: [], analysis: {} };
+  }
+}
+
+async function getCompleteCctvData() {
+  try {
+    let allCctvData: any[] = [];
+    let offset = 0;
+    const limit = 1000;
+    let hasMore = true;
+    let queryCount = 0;
+
+    console.log('Fetching complete CCTV data...');
+
+    while (hasMore && queryCount < 30) { // CCTV might have more records
+      queryCount++;
+      const { data: chunkData, error: chunkError } = await supabase
+        .from('wgc_databasewgc_database_field_cables')
+        .select('*')
+        .range(offset, offset + limit - 1);
+
+      if (chunkError) {
+        console.error(`CCTV chunk ${queryCount} error:`, chunkError);
+        break;
+      }
+
+      if (chunkData && chunkData.length > 0) {
+        allCctvData = allCctvData.concat(chunkData);
+        offset += limit;
+        hasMore = chunkData.length === limit;
+        console.log(`CCTV chunk ${queryCount}: ${chunkData.length} records (Total: ${allCctvData.length})`);
+      } else {
+        hasMore = false;
+      }
+    }
+
+    console.log(`CCTV data complete: ${allCctvData.length} total records`);
+
+    // Analyze CCTV data
+    const analysis = analyzeCctvData(allCctvData);
+    
+    return {
+      totalRecords: allCctvData.length,
+      rawData: allCctvData,
+      analysis: analysis
+    };
+  } catch (error) {
+    console.error('Error in CCTV data collection:', error);
+    return { totalRecords: 0, rawData: [], analysis: {} };
+  }
+}
+
+async function getCompleteExtractedData() {
+  try {
+    let allExtractedData: any[] = [];
+    let offset = 0;
+    const limit = 1000;
+    let hasMore = true;
+    let queryCount = 0;
+
+    console.log('Fetching complete Extracted data...');
+
+    while (hasMore && queryCount < 20) {
+      queryCount++;
+      const { data: chunkData, error: chunkError } = await supabase
+        .from('wgc_databasewgc_database_extracted')
+        .select('*')
+        .range(offset, offset + limit - 1);
+
+      if (chunkError) {
+        console.error(`Extracted chunk ${queryCount} error:`, chunkError);
+        break;
+      }
+
+      if (chunkData && chunkData.length > 0) {
+        allExtractedData = allExtractedData.concat(chunkData);
+        offset += limit;
+        hasMore = chunkData.length === limit;
+        console.log(`Extracted chunk ${queryCount}: ${chunkData.length} records (Total: ${allExtractedData.length})`);
+      } else {
+        hasMore = false;
+      }
+    }
+
+    console.log(`Extracted data complete: ${allExtractedData.length} total records`);
+
+    return {
+      totalRecords: allExtractedData.length,
+      rawData: allExtractedData,
+      analysis: analyzeExtractedData(allExtractedData)
+    };
+  } catch (error) {
+    console.error('Error in Extracted data collection:', error);
+    return { totalRecords: 0, rawData: [], analysis: {} };
+  }
+}
+
+async function getCompleteCabinSwitchData() {
+  try {
+    let allCabinSwitchData: any[] = [];
+    let offset = 0;
+    const limit = 1000;
+    let hasMore = true;
+    let queryCount = 0;
+
+    console.log('Fetching complete Cabin Switch data...');
+
+    while (hasMore && queryCount < 20) {
+      queryCount++;
+      const { data: chunkData, error: chunkError } = await supabase
+        .from('wgc_databasewgc_database_cabin_switch')
+        .select('*')
+        .range(offset, offset + limit - 1);
+
+      if (chunkError) {
+        console.error(`Cabin Switch chunk ${queryCount} error:`, chunkError);
+        break;
+      }
+
+      if (chunkData && chunkData.length > 0) {
+        allCabinSwitchData = allCabinSwitchData.concat(chunkData);
+        offset += limit;
+        hasMore = chunkData.length === limit;
+        console.log(`Cabin Switch chunk ${queryCount}: ${chunkData.length} records (Total: ${allCabinSwitchData.length})`);
+      } else {
+        hasMore = false;
+      }
+    }
+
+    console.log(`Cabin Switch data complete: ${allCabinSwitchData.length} total records`);
+
+    return {
+      totalRecords: allCabinSwitchData.length,
+      rawData: allCabinSwitchData,
+      analysis: analyzeCabinSwitchData(allCabinSwitchData)
+    };
+  } catch (error) {
+    console.error('Error in Cabin Switch data collection:', error);
+    return { totalRecords: 0, rawData: [], analysis: {} };
+  }
+}
+
+function analyzeWifiData(wifiData: any[]) {
+  const totalDevices = wifiData.length;
+  const onlineDevices = wifiData.filter(d => d.online__controller_?.toLowerCase() === 'online').length;
+  const offlineDevices = wifiData.filter(d => d.online__controller_?.toLowerCase() === 'offline').length;
+  
+  const crewDevices = wifiData.filter(d => d.user?.toLowerCase().includes('crew')).length;
+  const passengerDevices = wifiData.filter(d => !d.user?.toLowerCase().includes('crew')).length;
+  
+  const cabinDevices = wifiData.filter(d => d.inside_cabin?.toLowerCase() === 'yes').length;
+  const publicDevices = wifiData.filter(d => d.inside_cabin?.toLowerCase() !== 'yes').length;
+
+  // Extract unique cabin numbers
+  const cabinNumbers = [...new Set(wifiData.map(d => d.primary_cabin__rccl_).filter(Boolean))];
+
+  return {
+    totalDevices,
+    onlineDevices,
+    offlineDevices,
+    onlinePercentage: ((onlineDevices / totalDevices) * 100).toFixed(1),
+    crewDevices,
+    passengerDevices,
+    cabinDevices,
+    publicDevices,
+    uniqueCabins: cabinNumbers.length,
+    cabinNumbers: cabinNumbers,
+    breakdown: {
+      crew: {
+        total: crewDevices,
+        online: wifiData.filter(d => d.user?.toLowerCase().includes('crew') && d.online__controller_?.toLowerCase() === 'online').length,
+        offline: wifiData.filter(d => d.user?.toLowerCase().includes('crew') && d.online__controller_?.toLowerCase() === 'offline').length
+      },
+      passenger: {
+        total: passengerDevices,
+        online: wifiData.filter(d => !d.user?.toLowerCase().includes('crew') && d.online__controller_?.toLowerCase() === 'online').length,
+        offline: wifiData.filter(d => !d.user?.toLowerCase().includes('crew') && d.online__controller_?.toLowerCase() === 'offline').length
+      }
+    }
+  };
+}
+
+function analyzePbxData(pbxData: any[]) {
+  const totalDevices = pbxData.length;
+  const onlineDevices = pbxData.filter(d => d.online__controller_?.toLowerCase() === 'online').length;
+  const offlineDevices = pbxData.filter(d => d.online__controller_?.toLowerCase() === 'offline').length;
+  
+  const crewDevices = pbxData.filter(d => d.user?.toLowerCase().includes('crew')).length;
+  const passengerDevices = pbxData.filter(d => !d.user?.toLowerCase().includes('crew')).length;
+  
+  const cabinDevices = pbxData.filter(d => d.inside_cabin?.toLowerCase() === 'yes').length;
+  const publicDevices = pbxData.filter(d => d.inside_cabin?.toLowerCase() !== 'yes').length;
+
+  // Count cabins with multiple phones
+  const cabinCounts: { [key: string]: number } = {};
+  pbxData.forEach(device => {
+    const cabin = device.primary_cabin__rccl_;
+    if (cabin) {
+      cabinCounts[cabin] = (cabinCounts[cabin] || 0) + 1;
+    }
+  });
+
+  const cabinsWithMultiplePhones = Object.values(cabinCounts).filter(count => count > 1).length;
+  const cabinsWithOnePhone = Object.values(cabinCounts).filter(count => count === 1).length;
+
+  // Extract unique cabin numbers
+  const cabinNumbers = [...new Set(pbxData.map(d => d.primary_cabin__rccl_).filter(Boolean))];
+
+  return {
+    totalDevices,
+    onlineDevices,
+    offlineDevices,
+    onlinePercentage: ((onlineDevices / totalDevices) * 100).toFixed(1),
+    crewDevices,
+    passengerDevices,
+    cabinDevices,
+    publicDevices,
+    cabinsWithMultiplePhones,
+    cabinsWithOnePhone,
+    uniqueCabins: cabinNumbers.length,
+    cabinNumbers: cabinNumbers,
+    breakdown: {
+      crew: {
+        total: crewDevices,
+        online: pbxData.filter(d => d.user?.toLowerCase().includes('crew') && d.online__controller_?.toLowerCase() === 'online').length,
+        offline: pbxData.filter(d => d.user?.toLowerCase().includes('crew') && d.online__controller_?.toLowerCase() === 'offline').length
+      },
+      passenger: {
+        total: passengerDevices,
+        online: pbxData.filter(d => !d.user?.toLowerCase().includes('crew') && d.online__controller_?.toLowerCase() === 'online').length,
+        offline: pbxData.filter(d => !d.user?.toLowerCase().includes('crew') && d.online__controller_?.toLowerCase() === 'offline').length
+      }
+    }
+  };
+}
+
+function analyzeTvData(tvData: any[]) {
+  const totalDevices = tvData.length;
+  const onlineDevices = tvData.filter(t => t.online__controller_?.toLowerCase() === 'online').length;
+  const offlineDevices = tvData.filter(t => t.online__controller_?.toLowerCase() === 'offline').length;
+
+  const crewDevices = tvData.filter(t => t.user?.toLowerCase().includes('crew')).length;
+  const passengerDevices = tvData.filter(t => !t.user?.toLowerCase().includes('crew')).length;
+
+  // Extract unique cabin numbers
+  const cabinNumbers = [...new Set(tvData.map(d => d.primary_cabin__rccl_).filter(Boolean))];
+
+  return {
+    totalDevices,
+    onlineDevices,
+    offlineDevices,
+    onlinePercentage: (onlineDevices / totalDevices * 100).toFixed(1),
+    crewDevices,
+    passengerDevices,
+    uniqueCabins: cabinNumbers.length,
+    cabinNumbers: cabinNumbers,
+    breakdown: {
+      crew: {
+        total: crewDevices,
+        online: tvData.filter(t => t.user?.toLowerCase().includes('crew') && t.online__controller_?.toLowerCase() === 'online').length,
+        offline: tvData.filter(t => t.user?.toLowerCase().includes('crew') && t.online__controller_?.toLowerCase() === 'offline').length
+      },
+      passenger: {
+        total: passengerDevices,
+        online: tvData.filter(t => !t.user?.toLowerCase().includes('crew') && t.online__controller_?.toLowerCase() === 'online').length,
+        offline: tvData.filter(t => !t.user?.toLowerCase().includes('crew') && t.online__controller_?.toLowerCase() === 'offline').length
+      }
+    }
+  };
+}
+
+function analyzeCctvData(cctvData: any[]) {
+  const totalCables = cctvData.length;
+  const installedCables = cctvData.filter(c => c.installed?.toLowerCase() === 'yes' || c.installed?.toLowerCase() === 'installed').length;
+  const notInstalledCables = totalCables - installedCables;
+
+  // Check if user field exists
+  const hasUserField = cctvData.length > 0 && 'user' in cctvData[0];
+
+  if (hasUserField) {
+    const crewCables = cctvData.filter(c => c.user?.toLowerCase().includes('crew')).length;
+    const passengerCables = cctvData.filter(c => !c.user?.toLowerCase().includes('crew')).length;
+
+    return {
+      totalCables,
+      installedCables,
+      notInstalledCables,
+      installationPercentage: ((installedCables / totalCables) * 100).toFixed(1),
+      crewCables,
+      passengerCables,
+      crewInstalled: cctvData.filter(c => c.user?.toLowerCase().includes('crew') && (c.installed?.toLowerCase() === 'yes' || c.installed?.toLowerCase() === 'installed')).length,
+      passengerInstalled: cctvData.filter(c => !c.user?.toLowerCase().includes('crew') && (c.installed?.toLowerCase() === 'yes' || c.installed?.toLowerCase() === 'installed')).length,
+      systemTypes: [...new Set(cctvData.map(c => c.system).filter(Boolean))]
+    };
+  } else {
+    // Analyze by system type
+    const passengerSystems = ['cctv', 'cctv ws', 'pc/printer', 'pos', 'slot'];
+    const crewSystems = ['cabin switch', 'pbx', 'wifi', 'technical', 'technical modified', 'central clock', 'ds', 'module housing'];
+    
+    const passengerCables = cctvData.filter(c => passengerSystems.includes(c.system?.toLowerCase() || '')).length;
+    const crewCables = cctvData.filter(c => crewSystems.includes(c.system?.toLowerCase() || '')).length;
+
+    return {
+      totalCables,
+      installedCables,
+      notInstalledCables,
+      installationPercentage: ((installedCables / totalCables) * 100).toFixed(1),
+      passengerCables,
+      crewCables,
+      systemTypes: [...new Set(cctvData.map(c => c.system).filter(Boolean))],
+      note: 'Analysis based on system type classification'
+    };
+  }
+}
+
+function analyzeExtractedData(extractedData: any[]) {
+  return {
+    totalRecords: extractedData.length,
+    fields: extractedData.length > 0 ? Object.keys(extractedData[0]) : [],
+    sampleData: extractedData.slice(0, 5),
+    uniqueValues: {
+      // Add analysis based on available fields
+    }
+  };
+}
+
+function analyzeCabinSwitchData(cabinSwitchData: any[]) {
+  const totalDevices = cabinSwitchData.length;
+  const onlineDevices = cabinSwitchData.filter(d => d.online__controller_?.toLowerCase() === 'online').length;
+  const offlineDevices = cabinSwitchData.filter(d => d.online__controller_?.toLowerCase() === 'offline').length;
+
+  const crewDevices = cabinSwitchData.filter(d => d.user?.toLowerCase().includes('crew')).length;
+  const passengerDevices = cabinSwitchData.filter(d => !d.user?.toLowerCase().includes('crew')).length;
+
+  // Extract unique cabin numbers
+  const cabinNumbers = [...new Set(cabinSwitchData.map(d => d.primary_cabin__rccl_).filter(Boolean))];
+
+  return {
+    totalDevices,
+    onlineDevices,
+    offlineDevices,
+    onlinePercentage: ((onlineDevices / totalDevices) * 100).toFixed(1),
+    crewDevices,
+    passengerDevices,
+    uniqueCabins: cabinNumbers.length,
+    cabinNumbers: cabinNumbers,
+    breakdown: {
+      crew: {
+        total: crewDevices,
+        online: cabinSwitchData.filter(d => d.user?.toLowerCase().includes('crew') && d.online__controller_?.toLowerCase() === 'online').length,
+        offline: cabinSwitchData.filter(d => d.user?.toLowerCase().includes('crew') && d.online__controller_?.toLowerCase() === 'offline').length
+      },
+      passenger: {
+        total: passengerDevices,
+        online: cabinSwitchData.filter(d => !d.user?.toLowerCase().includes('crew') && d.online__controller_?.toLowerCase() === 'online').length,
+        offline: cabinSwitchData.filter(d => !d.user?.toLowerCase().includes('crew') && d.online__controller_?.toLowerCase() === 'offline').length
+      }
+    }
+  };
+}
+
+function analyzeCrossSystemData(allSystems: any) {
+  // Cross-system analysis
+  const allCabinNumbers = new Set();
+  const allSystemTypes = new Set();
+  const crewVsPax = { crew: 0, pax: 0 };
+  const publicVsCabin = { public: 0, cabin: 0 };
+
+  // Collect all cabin numbers across systems
+  Object.values(allSystems).forEach((system: any) => {
+    if (system.analysis?.cabinNumbers) {
+      system.analysis.cabinNumbers.forEach((cabin: string) => allCabinNumbers.add(cabin));
+    }
+  });
+
+  // Collect system types from CCTV
+  if (allSystems.cctv?.analysis?.systemTypes) {
+    allSystems.cctv.analysis.systemTypes.forEach((type: string) => allSystemTypes.add(type));
+  }
+
+  // Analyze crew vs pax across all systems
+  Object.values(allSystems).forEach((system: any) => {
+    if (system.analysis?.crewDevices) crewVsPax.crew += system.analysis.crewDevices;
+    if (system.analysis?.passengerDevices) crewVsPax.pax += system.analysis.passengerDevices;
+  });
+
+  // Analyze public vs cabin areas
+  Object.values(allSystems).forEach((system: any) => {
+    if (system.analysis?.publicDevices) publicVsCabin.public += system.analysis.publicDevices;
+    if (system.analysis?.cabinDevices) publicVsCabin.cabin += system.analysis.cabinDevices;
+  });
+
+  return {
+    totalUniqueCabins: allCabinNumbers.size,
+    allCabinNumbers: Array.from(allCabinNumbers),
+    systemTypes: Array.from(allSystemTypes),
+    crewVsPax,
+    publicVsCabin,
+    totalDevices: Object.values(allSystems).reduce((sum: number, system: any) => sum + (system.analysis?.totalDevices || 0), 0),
+    totalOnline: Object.values(allSystems).reduce((sum: number, system: any) => sum + (system.analysis?.onlineDevices || 0), 0),
+    totalOffline: Object.values(allSystems).reduce((sum: number, system: any) => sum + (system.analysis?.offlineDevices || 0), 0)
+  };
+}
+
+async function queryClaude(message: string, allSystemsData: any, systemType?: string, instructions?: string) {
+  try {
+    console.log('Querying Claude with:', { message, systemType, instructions });
+    
+    // For production code, we'd integrate with actual Claude API here
+    // Build a prompt that includes systemType and instructions if provided
+    let userPrompt = `Ship Systems Cross-Analysis Request:\n\nUser Question: ${message}`;
+    
+    // Add system type focus if provided
+    if (systemType) {
+      userPrompt += `\n\nFocus on ${systemType} system specifically.`;
+    }
+    
+    // Add custom instructions if provided
+    if (instructions) {
+      userPrompt += `\n\nInstructions: ${instructions}`;
+    }
+    
+    userPrompt += `\n\nComplete Dataset (All 6 Systems):\n${JSON.stringify(allSystemsData, null, 2)}\n\nPlease provide comprehensive analysis addressing the user's question.`;
+    
+    // Log the constructed prompt (excluding the large dataset)
+    console.log('Claude prompt constructed:', { 
+      message, 
+      systemType, 
+      instructions,
+      promptLength: userPrompt.length
+    });
+    
+    // Simulate Claude's response with enhanced understanding
+    const simulatedResponse = await simulateEnhancedClaudeResponse(message, allSystemsData, systemType, instructions);
+    
+    return simulatedResponse;
+  } catch (error) {
+    console.error('Error querying Claude:', error);
+    return "I'm sorry, I'm having trouble analyzing the data right now. Please try again.";
+  }
+}
+
+async function simulateEnhancedClaudeResponse(message: string, data: any, systemType?: string, instructions?: string) {
+  console.log('Simulating Claude response with:', {
+    messageLength: message.length,
+    systemType: systemType || 'not specified',
+    instructions: instructions || 'not provided'
+  });
+  
+  // Normalize message for easier matching
+  const lowerMessage = message.toLowerCase();
+  
+  // If a specific system type is provided, focus only on that system
+  if (systemType) {
+    const systemData = data.systems[systemType.toLowerCase()];
+    if (!systemData) {
+      // Return an error message with available systems if the requested system doesn't exist
+      const availableSystems = Object.keys(data.systems).join(', ');
+      return `I couldn't find data for the "${systemType}" system. Available systems are: ${availableSystems}.`;
+    }
+    
+    // Generate a system-specific response using the helper function
+    return generateSystemSpecificResponse(message, systemType, systemData, instructions);
+  }
+  
+  // Helper function to generate system-specific responses with table formatting
+  function generateSystemSpecificResponse(query: string, systemType: string, systemData: any, instructions?: string): string {
+    // Start building the response
+    let response = `## ${systemType.toUpperCase()} System Analysis\n\n`;
+    
+    // Add instructions if provided
+    if (instructions) {
+      response += `*Following instructions: ${instructions}*\n\n`;
+    }
+    
+    // Extract metrics for the system
+    const metrics = systemData.analysis || {};
+    
+    // Build a markdown table with key metrics
+    response += `| Metric | Value | Notes |\n|-------|-------|-------|\n`;
+    
+    // Add rows based on the query and available metrics
+    if (query.toLowerCase().includes('cabin')) {
+      response += `| **Total Cabins** | ${metrics.totalCabins || 'N/A'} | Direct answer to your cabin question |\n`;
+    }
+    if (query.toLowerCase().includes('device')) {
+      response += `| **Total Devices** | ${metrics.totalDevices || 'N/A'} | **Highlighted as key metric** |\n`;
+    }
+    response += `| Coverage Rate | ${metrics.coverageRate || metrics.onlinePercentage || 'N/A'}% | System health indicator |\n`;
+    response += `| Crew Devices | ${metrics.crewDevices || 'N/A'} | For crew areas |\n`;
+    response += `| Passenger Devices | ${metrics.passengerDevices || 'N/A'} | For passenger areas |\n`;
+    
+    // Add a summary section
+  
+  // Build a markdown table with key metrics
+  response += `| Metric | Value | Notes |\n|-------|-------|-------|\n`;
+  
+  // Add rows based on the query and available metrics
+  if (query.toLowerCase().includes('cabin')) {
+    response += `| **Total Cabins** | ${metrics.totalCabins || 'N/A'} | Direct answer to your cabin question |\n`;
+    return `🏠 Cross-System Cabin Analysis
+
+Based on comprehensive analysis across all 6 ship systems:
+
+• Total Unique Cabins: ${totalCabins}
+• Cabins with WiFi: ${data.systems.wifi?.analysis?.uniqueCabins || 0}
+• Cabins with Phones: ${data.systems.pbx?.analysis?.uniqueCabins || 0}
+• Cabins with TV: ${data.systems.tv?.analysis?.uniqueCabins || 0}
+• Cabins with Cabin Switch: ${data.systems.cabinSwitch?.analysis?.uniqueCabins || 0}
+
+📊 System Coverage by Cabin:
+- WiFi Coverage: ${data.systems.wifi?.analysis?.uniqueCabins || 0} cabins
+- Phone Coverage: ${data.systems.pbx?.analysis?.uniqueCabins || 0} cabins
+- TV Coverage: ${data.systems.tv?.analysis?.uniqueCabins || 0} cabins
+- Cabin Switch Coverage: ${data.systems.cabinSwitch?.analysis?.uniqueCabins || 0} cabins
+
+💡 Insights:
+- Comprehensive cabin coverage across multiple systems
+- Each cabin typically has multiple system types
+- Total unique cabins identified: ${totalCabins}
+
+🔧 Recommendations:
+- Verify coverage gaps in cabins missing specific systems
+- Ensure balanced distribution across crew and passenger areas`;
+  }
+
+  // Cross-system analysis for crew vs passenger
+  if (lowerMessage.includes('crew') && lowerMessage.includes('passenger') || lowerMessage.includes('pax')) {
+    const crewTotal = data.crossSystem?.crewVsPax?.crew || 0;
+    const paxTotal = data.crossSystem?.crewVsPax?.pax || 0;
+    
+    return `👥 Cross-System Crew vs Passenger Analysis
+
+Based on comprehensive analysis across all 6 ship systems:
+
+• Total Crew Devices: ${crewTotal}
+• Total Passenger Devices: ${paxTotal}
+• Total Devices: ${data.crossSystem?.totalDevices || 0}
+
+📊 Breakdown by System:
+WiFi System:
+• Crew WiFi: ${data.systems.wifi?.analysis?.crewDevices || 0}
+• Passenger WiFi: ${data.systems.wifi?.analysis?.passengerDevices || 0}
+
+PBX Phone System:
+• Crew Phones: ${data.systems.pbx?.analysis?.crewDevices || 0}
+• Passenger Phones: ${data.systems.pbx?.analysis?.passengerDevices || 0}
+
+TV System:
+• Crew TV: ${data.systems.tv?.analysis?.crewDevices || 0}
+• Passenger TV: ${data.systems.tv?.analysis?.passengerDevices || 0}
+
+Cabin Switch System:
+• Crew Cabin Switch: ${data.systems.cabinSwitch?.analysis?.crewDevices || 0}
+• Passenger Cabin Switch: ${data.systems.cabinSwitch?.analysis?.passengerDevices || 0}
+
+💡 Insights:
+- Crew areas: ${crewTotal} total devices across all systems
+- Passenger areas: ${paxTotal} total devices across all systems
+- Ratio: ${crewTotal > 0 ? (paxTotal / crewTotal).toFixed(1) : 'N/A'}:1 (passenger:crew)
+
+🔧 Recommendations:
+- Ensure adequate coverage for both crew and passenger areas
+- Monitor device distribution for optimal service delivery`;
+  }
+
+  // System type analysis
+  if (lowerMessage.includes('system') && lowerMessage.includes('type')) {
+    const systemTypes = data.crossSystem?.systemTypes || [];
+    
+    return `🔧 Cross-System Type Analysis
+
+Based on comprehensive analysis across all 6 ship systems:
+
+• Total System Types: ${systemTypes.length}
+• Available System Types: ${systemTypes.join(', ')}
+
+📊 System Distribution:
+WiFi System: ${data.systems.wifi?.analysis?.totalDevices || 0} devices
+PBX Phone System: ${data.systems.pbx?.analysis?.totalDevices || 0} devices
+TV System: ${data.systems.tv?.analysis?.totalDevices || 0} devices
+CCTV Field Cables: ${data.systems.cctv?.analysis?.totalCables || 0} cables
+Cabin Switch System: ${data.systems.cabinSwitch?.analysis?.totalDevices || 0} devices
+Extracted Data: ${data.systems.extracted?.analysis?.totalRecords || 0} records
+
+💡 System Type Insights:
+- Multiple system types provide comprehensive ship coverage
+- Each system serves specific operational needs
+- Cross-system integration ensures complete functionality
+
+🔧 Recommendations:
+- Maintain system type diversity for operational resilience
+- Ensure proper integration between different system types`;
+  }
+
+  // Public vs Cabin area analysis
+  if (lowerMessage.includes('public') && lowerMessage.includes('cabin')) {
+    const publicTotal = data.crossSystem?.publicVsCabin?.public || 0;
+    const cabinTotal = data.crossSystem?.publicVsCabin?.cabin || 0;
+    
+    return `🏢 Cross-System Public vs Cabin Area Analysis
+
+Based on comprehensive analysis across all 6 ship systems:
+
+• Total Public Area Devices: ${publicTotal}
+• Total Cabin Area Devices: ${cabinTotal}
+• Total Devices: ${data.crossSystem?.totalDevices || 0}
+
+📊 Breakdown by System:
+WiFi System:
+• Public WiFi: ${data.systems.wifi?.analysis?.publicDevices || 0}
+• Cabin WiFi: ${data.systems.wifi?.analysis?.cabinDevices || 0}
+
+PBX Phone System:
+• Public Phones: ${data.systems.pbx?.analysis?.publicDevices || 0}
+• Cabin Phones: ${data.systems.pbx?.analysis?.cabinDevices || 0}
+
+💡 Area Coverage Insights:
+- Public areas: ${publicTotal} devices across all systems
+- Cabin areas: ${cabinTotal} devices across all systems
+- Distribution ratio: ${cabinTotal > 0 ? (publicTotal / cabinTotal).toFixed(1) : 'N/A'}:1 (public:cabin)
+
+🔧 Recommendations:
+- Ensure balanced coverage between public and cabin areas
+- Monitor device distribution for optimal service delivery`;
+  }
+
+  // Default comprehensive overview
+  return `📊 Cross-System Ship Analysis Overview
+
+Based on your query: "${message}"
+
+Here's a comprehensive analysis across all 6 ship systems:
+
+🌐 WiFi System:
+• Total Devices: ${data.systems.wifi?.analysis?.totalDevices || 'N/A'}
+• Online Rate: ${data.systems.wifi?.analysis?.onlinePercentage || 'N/A'}%
+• Crew Devices: ${data.systems.wifi?.analysis?.crewDevices || 'N/A'}
+• Passenger Devices: ${data.systems.wifi?.analysis?.passengerDevices || 'N/A'}
+
+📞 PBX Phone System:
+• Total Devices: ${data.systems.pbx?.analysis?.totalDevices || 'N/A'}
+• Online Rate: ${data.systems.pbx?.analysis?.onlinePercentage || 'N/A'}%
+• Cabins with Multiple Phones: ${data.systems.pbx?.analysis?.cabinsWithMultiplePhones || 'N/A'}
+
+📹 CCTV Field Cables:
+• Total Cables: ${data.systems.cctv?.analysis?.totalCables || 'N/A'}
+• Installation Rate: ${data.systems.cctv?.analysis?.installationPercentage || 'N/A'}%
+• System Types: ${data.systems.cctv?.analysis?.systemTypes?.length || 'N/A'}
+
+📺 TV System:
+• Total Devices: ${data.systems.tv?.analysis?.totalDevices || 'N/A'}
+• Online Rate: ${data.systems.tv?.analysis?.onlinePercentage || 'N/A'}%
+
+🔌 Cabin Switch System:
+• Total Devices: ${data.systems.cabinSwitch?.analysis?.totalDevices || 'N/A'}
+• Online Rate: ${data.systems.cabinSwitch?.analysis?.onlinePercentage || 'N/A'}%
+
+📋 Extracted Data:
+• Total Records: ${data.systems.extracted?.analysis?.totalRecords || 'N/A'}
+
+💡 Cross-System Insights:
+- Total Unique Cabins: ${data.crossSystem?.totalUniqueCabins || 'N/A'}
+- Total Devices Across All Systems: ${data.crossSystem?.totalDevices || 'N/A'}
+- Overall Online Rate: ${data.crossSystem?.totalDevices ? ((data.crossSystem.totalOnline / data.crossSystem.totalDevices) * 100).toFixed(1) : 'N/A'}%
+- Crew vs Passenger Ratio: ${data.crossSystem?.crewVsPax?.crew || 0}:${data.crossSystem?.crewVsPax?.pax || 0}
+
+🔧 System Health:
+- All systems show good operational status
+- Cross-system integration provides comprehensive coverage
+- Crew and passenger areas are well-served across all systems
+
+For more specific analysis, please ask about particular systems, cabin numbers, crew/passenger areas, or system types.`;
+} 

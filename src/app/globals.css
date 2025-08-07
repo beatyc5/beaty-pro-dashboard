@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* AG Grid Styles */
+@import 'ag-grid-community/styles/ag-grid.css';
+@import 'ag-grid-community/styles/ag-theme-alpine.css';
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -23,4 +27,51 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Custom Dark Theme for AG Grid */
+.ag-theme-alpine {
+  --ag-background-color: #1e293b; /* slate-800 */
+  --ag-foreground-color: #e2e8f0; /* slate-200 */
+  --ag-header-background-color: #0f172a; /* slate-900 */
+  --ag-header-foreground-color: #e2e8f0; /* slate-200 */
+  --ag-odd-row-background-color: #1e293b; /* slate-800 */
+  --ag-even-row-background-color: #1e293b; /* slate-800 */
+  --ag-row-hover-background-color: #334155; /* slate-700 */
+  --ag-selected-row-background-color: #475569; /* slate-600 */
+  --ag-border-color: #475569; /* slate-600 */
+  --ag-row-border-color: #475569; /* slate-600 */
+  --ag-input-background-color: #334155; /* slate-700 */
+  --ag-input-foreground-color: #e2e8f0; /* slate-200 */
+  --ag-secondary-border-color: #475569; /* slate-600 */
+  --ag-font-size: 14px;
+  --ag-font-family: 'Arial', sans-serif;
+  --ag-range-selection-background-color: rgba(71, 85, 105, 0.5); /* slate-600 with transparency */
+  --ag-range-selection-background-color-2: rgba(71, 85, 105, 0.6);
+  --ag-range-selection-background-color-3: rgba(71, 85, 105, 0.7);
+  --ag-range-selection-background-color-4: rgba(71, 85, 105, 0.8);
+  --ag-data-color: #e2e8f0;
+  --ag-control-panel-background-color: #1e293b;
+  --ag-chip-background-color: #334155;
+  --ag-chip-foreground-color: #e2e8f0;
+  --ag-button-background-color: #334155;
+  --ag-button-foreground-color: #e2e8f0;
+  --ag-icon-color: #e2e8f0;
+}
+
+/* Flashing animation for offline numbers */
+@keyframes flash {
+  0%, 50% {
+    color: #dc2626; /* red-600 */
+  }
+  25%, 75% {
+    color: #fca5a5; /* red-300 */
+  }
+  100% {
+    color: #dc2626; /* red-600 */
+  }
+}
+
+.flash-offline {
+  animation: flash 1.5s ease-in-out infinite;
 }

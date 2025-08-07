@@ -1,0 +1,245 @@
+/* Tabulator-style responsive table styles */
+
+/* Regular table structure for normal view */
+.responsive-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* Make sure headers don't wrap and ellipsis if too long */
+.responsive-table thead th {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 8px;
+}
+
+/* Basic cell styling */
+.responsive-table td {
+  padding: 8px;
+}
+
+/* First column (checkbox) is always visible and fixed width */
+.responsive-table th:first-child,
+.responsive-table td:first-child {
+  width: 40px;
+  text-align: center;
+}
+
+/* Row toggle button styling */
+.row-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: #fff;
+  opacity: 0.7;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+
+.row-toggle:hover {
+  opacity: 1;
+}
+
+/* Collapsed content container - hidden by default */
+.tabulator-responsive-collapse {
+  display: none;
+  padding: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: rgba(20, 30, 50, 0.7);
+  width: 100%;
+  box-sizing: border-box;
+  grid-column: 1 / -1;
+}
+
+/* Container for stacked data */
+.tabulator-responsive-collapse-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+/* Style for collapsed cell items */
+.tabulator-responsive-collapse-item {
+  display: flex;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+}
+
+/* Style for column labels in stacked view */
+.tabulator-responsive-collapse-label {
+  font-weight: 600;
+  margin-right: 8px;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.7);
+  min-width: 100px;
+}
+
+/* Style for column values in stacked view */
+.tabulator-responsive-collapse-value {
+  flex: 1;
+  word-break: break-word;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Show expanded collapse panels */
+.tabulator-responsive-collapse.expanded {
+  display: block;
+}
+
+/* Icons for toggle button */
+.toggle-icon {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  position: relative;
+}
+
+.toggle-icon:before {
+  content: '+';
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.expanded .toggle-icon:before {
+  content: '-';
+}
+
+/* Media queries for responsive layout */
+/* Each breakpoint hides specific columns */
+
+/* Toggle button visibility - only show when needed */
+.toggle-container {
+  display: none;
+}
+
+@media (max-width: 1400px) {
+  /* Show toggle column at first breakpoint */
+  .toggle-container {
+    display: table-cell;
+  }
+  
+  /* Mark columns to be hidden at this breakpoint */
+  .responsive-table th[data-field='switch'],
+  .responsive-table th[data-field='blade_port'],
+  .responsive-table td[data-field='switch'],
+  .responsive-table td[data-field='blade_port'] {
+    display: none;
+  }
+}
+
+@media (max-width: 1300px) {
+  /* Hide additional columns at this breakpoint */
+  .responsive-table th[data-field='rdp_yard'],
+  .responsive-table td[data-field='rdp_yard'] {
+    display: none;
+  }
+}
+
+@media (max-width: 1200px) {
+  .responsive-table th[data-field='beaty_remarks'],
+  .responsive-table td[data-field='beaty_remarks'] {
+    display: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .responsive-table th[data-field='user'],
+  .responsive-table th[data-field='mac_address'],
+  .responsive-table td[data-field='user'],
+  .responsive-table td[data-field='mac_address'] {
+    display: none;
+  }
+}
+
+@media (max-width: 950px) {
+  .responsive-table th[data-field='installed'],
+  .responsive-table th[data-field='system'],
+  .responsive-table td[data-field='installed'],
+  .responsive-table td[data-field='system'] {
+    display: none;
+  }
+  
+  .responsive-table tr.responsive-collapse-950 .tabulator-responsive-collapse {
+    display: block;
+  }
+}
+
+@media (max-width: 800px) {
+  .responsive-table th[data-field='location'],
+  .responsive-table td[data-field='location'] {
+    display: none;
+  }
+  
+  .responsive-table tr.responsive-collapse-800 .tabulator-responsive-collapse {
+    display: block;
+  }
+}
+
+@media (max-width: 700px) {
+  .responsive-table th[data-field='side'],
+  .responsive-table th[data-field='frame'],
+  .responsive-table td[data-field='side'],
+  .responsive-table td[data-field='frame'] {
+    display: none;
+  }
+  
+  .responsive-table tr.responsive-collapse-700 .tabulator-responsive-collapse {
+    display: block;
+  }
+}
+
+@media (max-width: 600px) {
+  .responsive-table th[data-field='fz'],
+  .responsive-table th[data-field='dk'],
+  .responsive-table td[data-field='fz'],
+  .responsive-table td[data-field='dk'] {
+    display: none;
+  }
+  
+  .responsive-table tr.responsive-collapse-600 .tabulator-responsive-collapse {
+    display: block;
+  }
+}
+
+@media (max-width: 500px) {
+  .responsive-table th[data-field='area'],
+  .responsive-table td[data-field='area'] {
+    display: none;
+  }
+  
+  .responsive-table tr.responsive-collapse-500 .tabulator-responsive-collapse {
+    display: block;
+  }
+  .responsive-table tr {
+    display: block;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #2d3748;
+  }
+  .responsive-table th:not(:first-child) {
+    display: none;
+  }
+  .responsive-table td[data-column-id] {
+    display: block;
+    padding-left: 1rem;
+    border-top: none;
+  }
+  .responsive-table td[data-column-id]:before {
+    content: attr(data-label) ": ";
+    font-weight: 600;
+  }
+}
+
+.responsive-table tr {
+  position: relative;
+}
+
+.responsive-table td {
+  position: relative;
+}

@@ -39,3 +39,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# deployment and backup files
+_public wifi webview/
+backup/
+backups/
+copycoder-prompts-*/
+.firebase/
+pglite-debug.log
+*.log
+
+# large pdf directories
+public/pdfs/
+
+# deployment configs (keep only essential ones)
+Dockerfile
+docker-compose.yml

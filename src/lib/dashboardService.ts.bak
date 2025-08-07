@@ -1,0 +1,226 @@
+import { supabase } from './supabase';
+
+// Interface for user type counts
+export interface CountsByUserType {
+  crew: number;
+  pax: number;
+  total: number;
+}
+
+// Interface for online/offline counts
+export interface ServiceStatus {
+  online: CountsByUserType;
+  offline: CountsByUserType;
+  total: CountsByUserType;
+}
+
+// Interface for dashboard data
+export interface DashboardData {
+  cabinSwitch: ServiceStatus;
+  wifi: ServiceStatus;
+  pbx: ServiceStatus;
+  tv: ServiceStatus;
+  totalOnline: number;
+  totalOffline: number;
+  totalDevices: number;
+}
+
+// Dashboard Service class for fetching and processing data
+export class DashboardService {
+  // Table names for the different services
+  private readonly tableCabinSwitch = 'wgc_databasewgc_database_cabin_switch';
+  private readonly tableWifi = 'wgc_databasewgc_database_wifi';
+  private readonly tablePbx = 'wgc_databasewgc_database_pbx';
+  private readonly tableTv = 'wgc_databasewgc_database_tv';
+
+  // Get counts for a specific service
+  async getServiceCounts(tableName: string): Promise<ServiceStatus> {
+    try {
+      console.log(`Fetching data from ${tableName}...`);
+      
+      // Get total count first
+      const { count, error: countError } = await supabase
+        .from(tableName)
+        .select('*', { count: 'exact', head: true });
+        
+      if (countError) {
+        console.error(`Error counting records in ${tableName}:`, countError);
+        throw countError;
+      }
+      
+      console.log(`Total count for ${tableName}: ${count}`);
+      
+      // Instead of trying to fetch all records, directly count by relevant fields
+      // Query for online crew count
+      const { data: onlineCrewData, error: onlineCrewError } = await supabase
+        .from(tableName)
+        .select('count', { count: 'exact' })
+        .eq('online__at_once_', 'ONLINE')
+        .ilike('user', '%crew%');
+        
+      if (onlineCrewError) {
+        console.error(`Error fetching online crew from ${tableName}:`, onlineCrewError);
+        throw onlineCrewError;
+      }
+      
+      // Query for online pax count
+      const { data: onlinePaxData, error: onlinePaxError } = await supabase
+        .from(tableName)
+        .select('count', { count: 'exact' })
+        .eq('online__at_once_', 'ONLINE')
+        .ilike('user', '%pax%');
+        
+      if (onlinePaxError) {
+        console.error(`Error fetching online pax from ${tableName}:`, onlinePaxError);
+        throw onlinePaxError;
+      }
+      
+      // Get the first row for inspection of field names
+      const { data: sampleData, error: sampleError } = await supabase
+        .from(tableName)
+        .select('*')
+        .limit(1);
+        
+      if (sampleError) {
+        console.error(`Error fetching sample from ${tableName}:`, sampleError);
+        throw sampleError;
+      }
+      
+      // Log sample record for debugging
+      if (sampleData && sampleData.length > 0) {
+        console.log(`First record from ${tableName}:`, JSON.stringify(sampleData[0]));
+        console.log(`Fields in first record:`, Object.keys(sampleData[0]));
+      }
+      
+      // Extract counts
+      const onlineCrew = onlineCrewData?.length ? parseInt(onlineCrewData[0].count) : 0;
+      const onlinePax = onlinePaxData?.length ? parseInt(onlinePaxData[0].count) : 0;
+      const totalOnline = onlineCrew + onlinePax;
+
+      
+      // Initialize counts using our new direct query approach
+      const counts = {
+        online: {
+          crew: onlineCrewData?.length ? parseInt(onlineCrewData[0].count) : 0,
+          pax: onlinePaxData?.length ? parseInt(onlinePaxData[0].count) : 0,
+          total: (onlineCrewData?.length ? parseInt(onlineCrewData[0].count) : 0) + (onlinePaxData?.length ? parseInt(onlinePaxData[0].count) : 0),
+        },
+        offline: {
+          crew: Math.max(0, (count || 0) - (onlineCrewData?.length ? parseInt(onlineCrewData[0].count) : 0) - (onlinePaxData?.length ? parseInt(onlinePaxData[0].count) : 0)), // All remaining must be offline
+          pax: 0, // We'll set this based on proportions
+          total: offlineCount,
+        },
+        total: {
+          crew: 0, // Will be calculated
+          pax: 0, // Will be calculated
+          total: count || 0,
+        }
+      };
+      
+      // Calculate total crew and pax
+      counts.total.crew = counts.online.crew + counts.offline.crew;
+      counts.total.pax = (count || 0) - counts.total.crew;
+                          record.online__at_once_ === 1 || 
+                          record.online__at_once_ === 'yes' ||
+                          record.online__at_once_ === 'ONLINE';
+          
+          // Update counts
+          if (isOnline) {
+            if (isCrew) {
+              result.online.crew++;
+            } else {
+              result.online.pax++;
+            }
+            result.online.total++;
+          } else {
+            if (isCrew) {
+              result.offline.crew++;
+            } else {
+              result.offline.pax++;
+            }
+            result.offline.total++;
+          }
+          
+          // Update total counts
+          if (isCrew) {
+            result.total.crew++;
+          } else {
+            result.total.pax++;
+          }
+          result.total.total++;
+        });
+      }
+      
+      console.log(`${tableName} counts:`, result);
+      return result;
+    } catch (error) {
+      console.error(`Error processing ${tableName} data:`, error);
+      // Return empty counts in case of error
+      return {
+        online: { crew: 0, pax: 0, total: 0 },
+        offline: { crew: 0, pax: 0, total: 0 },
+        total: { crew: 0, pax: 0, total: 0 }
+      };
+    }
+  },
+  
+  // Get all dashboard data
+  async getDashboardData(): Promise<DashboardData> {
+    try {
+      // Fetch data for all services in parallel for better performance
+      const [cabinSwitchData, wifiData, pbxData, tvData] = await Promise.all([
+        this.getServiceCounts('wgc_databasewgc_database_cabin_switch'),
+        this.getServiceCounts('wgc_databasewgc_database_wifi'),
+        this.getServiceCounts('wgc_databasewgc_database_pbx'),
+        this.getServiceCounts('wgc_databasewgc_database_tv')
+      ]);
+      
+      // Calculate totals across all services
+      const totalOnline = cabinSwitchData.online.total + wifiData.online.total + 
+                          pbxData.online.total + tvData.online.total;
+      
+      const totalOffline = cabinSwitchData.offline.total + wifiData.offline.total + 
+                           pbxData.offline.total + tvData.offline.total;
+      
+      const totalDevices = totalOnline + totalOffline;
+      
+      return {
+        cabinSwitch: cabinSwitchData,
+        wifi: wifiData,
+        pbx: pbxData,
+        tv: tvData,
+        totalOnline,
+        totalOffline,
+        totalDevices
+      };
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      // Return empty data in case of error
+      return {
+        cabinSwitch: {
+          online: { crew: 0, pax: 0, total: 0 },
+          offline: { crew: 0, pax: 0, total: 0 },
+          total: { crew: 0, pax: 0, total: 0 }
+        },
+        wifi: {
+          online: { crew: 0, pax: 0, total: 0 },
+          offline: { crew: 0, pax: 0, total: 0 },
+          total: { crew: 0, pax: 0, total: 0 }
+        },
+        pbx: {
+          online: { crew: 0, pax: 0, total: 0 },
+          offline: { crew: 0, pax: 0, total: 0 },
+          total: { crew: 0, pax: 0, total: 0 }
+        },
+        tv: {
+          online: { crew: 0, pax: 0, total: 0 },
+          offline: { crew: 0, pax: 0, total: 0 },
+          total: { crew: 0, pax: 0, total: 0 }
+        },
+        totalOnline: 0,
+        totalOffline: 0,
+        totalDevices: 0
+      };
+    }
+  }
+};

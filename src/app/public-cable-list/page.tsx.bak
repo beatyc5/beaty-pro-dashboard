@@ -1,0 +1,626 @@
+'use client';
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ArrowLeft, Plus, Search, Filter, Download, RefreshCw, Zap, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
+import Link from 'next/link';
+import { cableService, Cable } from '@/lib/supabase';
+import './responsive-table.css';
+
+// Get window width for client-side only
+const getWindowWidth = () => {
+  if (typeof window !== 'undefined') {
+    return window.innerWidth;
+  }
+  return 0;
+};
+
+export default function PublicCableList() {
+  // Custom table state
+  const [sortColumn, setSortColumn] = useState<keyof Cable | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [windowWidth, setWindowWidth] = useState<number>(getWindowWidth());
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
+  const [searchTerm, setSearchTerm] = useState('');
+  const [mounted, setMounted] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const [selectedSystem, setSelectedSystem] = useState<string | null>(null);
+  const [availableSystems, setAvailableSystems] = useState<string[]>([]);
+  const [cables, setCables] = useState<Cable[]>([]);
+  const itemsPerPage = 10;
+  const tableRef = useRef<HTMLDivElement>(null);
+  
+  // Add column filters
+  const [columnFilters, setColumnFilters] = useState<{[key: string]: string}>({
+    id: '',
+    cable_id: '',
+    area: '',
+    dk: '',
+    fz: '',
+    frame: '',
+    side: '',
+    location: '',
+    system: '',
+    installed: '',
+    mac_address: '',
+    user: '',
+    beaty_remarks: '',
+    rdp_yard: '',
+    switch: '',
+    blade_port: ''
+  });
+
+  // Load data from Supabase
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      console.log('Loading data from Supabase...');
+      
+      // Get total count first
+      const count = await cableService.getCableCount();
+      setTotalCount(count);
+      console.log('Total records in database:', count);
+      
+      const data = await cableService.getAllCables();
+      console.log('Data loaded:', data);
+      console.log('Records returned:', data.length);
+      console.log('First record structure:', data[0]);
+      console.log('Last record structure:', data[data.length - 1]);
+      console.log('All available fields:', Object.keys(data[0] || {}));
+      console.log('Field names:', Object.keys(data[0] || {}).join(', '));
+      
+      // Get systems for filtering
+      const systems = [...new Set(data.map(item => item.system))].filter(Boolean);
+      setAvailableSystems(systems);
+      console.log('Systems extracted:', systems);
+      
+      setCables(data);
+    } catch (error) {
+      console.error('Error loading cables:', error);
+      console.log('Using fallback sample data...');
+      // Fallback to sample data if database is not ready (updated to match Cable interface)
+      const sampleData = [
+        { id: 1, cable_id: 'C20128', area: '002M', dk: '0', fz: '2', frame: '312', side: 'P', location: '20128', system: 'cabin switch', installed: 'yes', mac_address: '-', user: 'CREW', beaty_remarks: '-', rdp_yard: '102B', switch: 'DST1021iL3b', blade_port: 'Gi1/0/8', created_at: '2025-01-01', updated_at: '2025-07-15' },
+        { id: 2, cable_id: 'C20129', area: '002M', dk: '0', fz: '2', frame: '313', side: 'S', location: '20129', system: 'cabin data', installed: 'yes', mac_address: '-', user: 'CREW', beaty_remarks: '-', rdp_yard: '102B', switch: 'DST1021iL3b', blade_port: 'Gi1/0/9', created_at: '2025-02-01', updated_at: '2025-07-01' },
+        { id: 3, cable_id: 'C20130', area: '003M', dk: '1', fz: '3', frame: '314', side: 'P', location: '20130', system: 'emergency', installed: 'no', mac_address: '-', user: 'CREW', beaty_remarks: 'pending install', rdp_yard: '103B', switch: 'DST1022iL3b', blade_port: 'Gi1/0/10', created_at: '2025-03-01', updated_at: '2025-03-10' },
+        { id: 4, cable_id: 'C20131', area: '003M', dk: '1', fz: '3', frame: '315', side: 'S', location: '20131', system: 'cabin switch', installed: 'yes', mac_address: '-', user: 'OFFICER', beaty_remarks: '-', rdp_yard: '103B', switch: 'DST1022iL3b', blade_port: 'Gi1/0/11', created_at: '2025-04-01', updated_at: '2025-04-05' },
+        { id: 5, cable_id: 'C20132', area: '004M', dk: '2', fz: '4', frame: '316', side: 'P', location: '20132', system: 'cabin data', installed: 'yes', mac_address: '-', user: 'OFFICER', beaty_remarks: '-', rdp_yard: '104B', switch: 'DST1023iL3b', blade_port: 'Gi1/0/12', created_at: '2025-05-01', updated_at: '2025-06-15' },
+      ];
+      setCables(sampleData);
+      setTotalCount(sampleData.length);
+      setAvailableSystems(['System 1', 'System 2', 'System 3']);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter cables based on global search term and column filters
+  const filteredCables = useMemo(() => {
+    return cables.filter(cable => {
+      // First apply global search if specified
+      if (searchTerm) {
+        const matchesGlobalSearch = 
+          (cable.id?.toString().toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.cable_id?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.area?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.dk?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.fz?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.frame?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.side?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.location?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.system?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.installed?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.mac_address?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.user?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.beaty_remarks?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.rdp_yard?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.switch?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          (cable.blade_port?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          false;
+          
+        if (!matchesGlobalSearch) return false;
+      }
+      
+      // Then apply column-specific filters
+      for (const [field, filterValue] of Object.entries(columnFilters)) {
+        if (!filterValue) continue; // Skip empty filters
+        
+        const cableValue = String(cable[field as keyof Cable] || '').toLowerCase();
+        if (!cableValue.includes(filterValue.toLowerCase())) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+  }, [cables, searchTerm, columnFilters]);
+
+  // Define custom table columns aligned with Cable interface
+  const columns = [
+    { header: 'ID', field: 'id', width: '60px' },
+    { header: 'Cable ID', field: 'cable_id' },
+    { header: 'Area', field: 'area', width: '80px' },
+    { header: 'DK', field: 'dk', width: '60px' },
+    { header: 'FZ', field: 'fz', width: '60px' },
+    { header: 'Frame', field: 'frame', width: '80px' },
+    { header: 'Side', field: 'side', width: '60px' },
+    { header: 'Location', field: 'location' },
+    { header: 'System', field: 'system' },
+    { header: 'Installed', field: 'installed', width: '90px' },
+    { header: 'MAC Address', field: 'mac_address' },
+    { header: 'User', field: 'user' },
+    { header: 'Remarks', field: 'beaty_remarks' },
+    { header: 'RDP Yard', field: 'rdp_yard' },
+    { header: 'Switch', field: 'switch' },
+    { header: 'Blade Port', field: 'blade_port' },
+  ];
+
+  // Custom sort function
+  const sortedCables = useMemo(() => {
+    let sorted = [...filteredCables];
+    
+    if (sortColumn) {
+      sorted.sort((a, b) => {
+        const aValue = a[sortColumn] as string | number;
+        const bValue = b[sortColumn] as string | number;
+        
+        if (aValue === undefined || aValue === null) return sortDirection === 'asc' ? -1 : 1;
+        if (bValue === undefined || bValue === null) return sortDirection === 'asc' ? 1 : -1;
+        
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+          return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+        }
+        
+        const aString = String(aValue);
+        const bString = String(bValue);
+        
+        return sortDirection === 'asc' 
+          ? aString.localeCompare(bString) 
+          : bString.localeCompare(aString);
+      });
+    }
+    
+    return sorted;
+  }, [filteredCables, sortColumn, sortDirection]);
+  
+  // Pagination logic
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, filteredCables.length);
+  const totalPages = Math.ceil(filteredCables.length / itemsPerPage);
+  const currentPageData = useMemo(() => {
+    return sortedCables.slice(startIndex, endIndex);
+  }, [sortedCables, startIndex, endIndex]);
+  
+  // Handle sorting
+  const handleSort = (field: keyof Cable) => {
+    if (sortColumn === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Handle select all toggle
+  const handleSelectAll = () => {
+    if (selectedRows.size === currentPageData.length) {
+      setSelectedRows(new Set()); // Clear selection
+    } else {
+      // Select all visible rows
+      const allRowIds = new Set<number>();
+      currentPageData.forEach(cable => allRowIds.add(cable.id));
+      setSelectedRows(allRowIds);
+    }
+  };
+
+  // Handle row selection toggle
+  const handleRowSelect = (id: number) => {
+    const newSelectedRows = new Set(selectedRows);
+    if (newSelectedRows.has(id)) {
+      newSelectedRows.delete(id);
+    } else {
+      newSelectedRows.add(id);
+    }
+    setSelectedRows(newSelectedRows);
+  };
+
+  // Handle pagination
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  // Load data (previously filtered by system - now using manufacturer as a filter)
+  const loadDataBySystem = async (system: string) => {
+    try {
+      setLoading(true);
+      setSelectedSystem(system);
+    
+    if (system === 'all') {
+        await loadData();
+        return;
+      }
+      
+      const data = await cableService.getCablesBySystem(system);
+      console.log(`Data loaded for system ${system}:`, data.length, 'records');
+      
+      setCables(data);
+    } catch (error) {
+      console.error('Error loading cables by system:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Toggle a row's expanded state for responsive collapse
+  const toggleRowExpansion = (id: number) => {
+    setExpandedRows(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  useEffect(() => {
+    setMounted(true);
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const handleResize = () => {
+        setWindowWidth(window.innerWidth);
+      };
+      
+      window.addEventListener('resize', handleResize);
+      handleResize(); // Initial call
+      
+      return () => {
+        window.removeEventListener('resize', handleResize);
+      };
+    }
+  }, []);
+
+  return (
+    <div className="bg-slate-800 text-white min-h-screen">
+      {/* Header */}
+      <header className="bg-slate-900 border-b border-slate-700 px-4 py-3 flex items-center sticky top-0 z-50">
+        <div className="flex items-center space-x-4">
+          <Link href="/" className="text-slate-400 hover:text-white">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div className="flex items-center space-x-2">
+            <div className="w-6 h-6 bg-orange-500 rounded flex items-center justify-center">
+              <Zap className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-medium">
+              <span className="text-green-500">Beaty</span>
+              <span className="text-orange-500">.pro</span>
+            </span>
+          </div>
+        </div>
+        
+        <div className="flex-grow flex justify-center">
+          <h1 className="text-xl font-semibold">Public Cable List</h1>
+        </div>
+        
+        {/* Empty div to balance the layout */}
+        <div className="w-24"></div>
+      </header>
+
+      {/* Main Content */}
+      <div className="p-6">
+        {/* Toolbar */}
+        <div className="bg-slate-700 rounded-lg p-4 mb-6 sticky top-16 z-40">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              {/* Search */}
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search by Cable ID, Area, Location, System, User, MAC..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1); // Reset to first page when searching
+                  }}
+                  className="bg-slate-600 border border-slate-500 rounded px-3 py-2 pl-10 text-sm w-64 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              
+
+            </div>
+            
+            <div className="flex items-center space-x-3">
+              {/* Export */}
+              <button className="bg-blue-600 hover:bg-blue-500 px-3 py-2 rounded text-sm flex items-center space-x-2">
+                <Download className="w-4 h-4" />
+                <span>Export</span>
+              </button>
+              
+              {/* Refresh */}
+              <button 
+                onClick={loadData}
+                className="bg-slate-600 hover:bg-slate-500 px-3 py-2 rounded text-sm flex items-center space-x-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Data Table */}
+        <div className="bg-slate-700 rounded-lg p-4">
+          {/* Responsive table styles */}
+          {/* Table styles are now in external responsive-table.css */}
+
+          {/* Custom React Table */}
+          {loading ? (
+            <div className="mt-8 text-center text-slate-400">
+              <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" />
+              <p>Loading cable data...</p>
+            </div>
+          ) : (
+            <div>
+              <div className="responsive-table" ref={tableRef}>
+                <table>
+                  <thead>
+                    <tr>
+                    {/* Checkbox header */}
+                    <th className="p-3 text-center">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedRows.size === currentPageData.length && currentPageData.length > 0}
+                        onChange={handleSelectAll}
+                        className="checkbox"
+                      />
+                    </th>
+                    
+                    {/* Toggle button header - only visible in responsive mode */}
+                    <th className="p-3 toggle-container" data-field="toggle">
+                      <button className="row-toggle">
+                        <ChevronsUpDown className="w-4 h-4" />
+                      </button>
+                    </th>
+                    
+                      {/* Column headers */}
+                      {columns.map((column, index) => (
+                        <th 
+                          key={index} 
+                          className="p-3" 
+                          data-field={column.field}
+                          style={{ width: column.width || 'auto' }}
+                        >
+                        <button 
+                          className="flex items-center space-x-1 cursor-pointer"
+                          onClick={() => handleSort(column.field as keyof Cable)}
+                        >
+                          <span>{column.header}</span>
+                          {sortColumn === column.field && (
+                            <span>
+                              {sortDirection === 'asc' ? 
+                                <ChevronUp className="w-4 h-4" /> : 
+                                <ChevronDown className="w-4 h-4" />
+                              }
+                            </span>
+                        </button>
+                      </td>
+                      
+                      {/* Data columns */}
+                      {columns.map((column, index) => {
+                        let value = cable[column.field as keyof Cable];
+                        let displayValue = '';
+                    if (windowWidth <= 500) responsiveClass = 'responsive-collapse-500';
+                    else if (windowWidth <= 600) responsiveClass = 'responsive-collapse-600';
+                    else if (windowWidth <= 700) responsiveClass = 'responsive-collapse-700';
+                    else if (windowWidth <= 800) responsiveClass = 'responsive-collapse-800';
+                    else if (windowWidth <= 950) responsiveClass = 'responsive-collapse-950';
+                    else if (windowWidth <= 1100) responsiveClass = 'responsive-collapse-1100';
+                    else if (windowWidth <= 1200) responsiveClass = 'responsive-collapse-1200';
+                    else if (windowWidth <= 1300) responsiveClass = 'responsive-collapse-1300';
+                    else if (windowWidth <= 1400) responsiveClass = 'responsive-collapse-1400';
+                    
+                    return (
+                      <tr key={cable.id} className={responsiveClass}>
+                        {/* Checkbox column */}
+                        <td className="p-3 text-center">
+                          <input 
+                            type="checkbox" 
+                            checked={selectedRows.has(cable.id)}
+                            onChange={() => handleRowSelect(cable.id)}
+                            className="checkbox"
+                          />
+                        </td>
+                        
+                        {/* Toggle button column - only visible in responsive mode */}
+                        <td className="p-3 toggle-container" data-field="toggle">
+                          <button 
+                            className={`row-toggle ${isExpanded ? 'expanded' : ''}`} 
+                            onClick={() => toggleRowExpansion(cable.id)}
+                          >
+                            <span className="toggle-icon"></span>
+                          </button>
+                        </td>
+                        
+                        {/* Data columns */}
+                        {columns.map((column, index) => {
+                          let value = cable[column.field as keyof Cable];
+                          let displayValue = '';
+                          
+                          if (value === null || value === undefined) {
+                            displayValue = '-';
+                          } else if (typeof value === 'object' && value !== null) {
+                            // Safely handle potential Date objects
+                            const dateString = String(value);
+                            if (dateString.match(/^\d{4}-\d{2}-\d{2}/) && !isNaN(new Date(dateString).getTime())) {
+                              displayValue = new Date(dateString).toLocaleDateString();
+                            } else {
+                              try {
+                                displayValue = JSON.stringify(value);
+                              } catch (e) {
+                                displayValue = String(value);
+                              }
+                            }
+                          } else {
+                            displayValue = String(value);
+                          }
+                          
+                          return (
+                            <td 
+                              key={index} 
+                              className="p-3" 
+                              data-label={column.header} 
+                              data-field={column.field}
+                            >
+                              {displayValue}
+                            </td>
+                          );
+                        })}
+                        
+                        {/* Responsive collapse panel - contains hidden columns */}
+                        <td className="tabulator-responsive-collapse-cell" colSpan={columns.length + 2}>
+                          <div className={`tabulator-responsive-collapse ${isExpanded ? 'expanded' : ''}`}>
+                            <div className="tabulator-responsive-collapse-list">
+                              {columns.map((column, index) => {
+                                // Only show columns that are hidden at current window width
+                                let shouldShow = false;
+                                if (
+                                  (windowWidth <= 1400 && ['switch', 'blade_port'].includes(column.field)) ||
+                                  (windowWidth <= 1300 && column.field === 'rdp_yard') ||
+                                  (windowWidth <= 1200 && column.field === 'beaty_remarks') ||
+                                  (windowWidth <= 1100 && ['user', 'mac_address'].includes(column.field)) ||
+                                  (windowWidth <= 950 && ['installed', 'system'].includes(column.field)) ||
+                                  (windowWidth <= 800 && column.field === 'location') ||
+                                  (windowWidth <= 700 && ['side', 'frame'].includes(column.field)) ||
+                                  (windowWidth <= 600 && ['fz', 'dk'].includes(column.field)) ||
+                                  (windowWidth <= 500 && column.field === 'area')
+                                ) {
+                                  shouldShow = true;
+                                }
+                                
+                                if (!shouldShow) return null;
+                                
+                                let value = cable[column.field as keyof Cable];
+                                let displayValue = '';
+                                
+                                if (value === null || value === undefined) {
+                                  displayValue = '-';
+                                } else if (typeof value === 'object' && value !== null) {
+                                  // Safely handle potential Date objects
+                                  const dateString = String(value);
+                                  if (dateString.match(/^\d{4}-\d{2}-\d{2}/) && !isNaN(new Date(dateString).getTime())) {
+                                    displayValue = new Date(dateString).toLocaleDateString();
+                                  } else {
+                                    try {
+                                      displayValue = JSON.stringify(value);
+                                    } catch (e) {
+                                      displayValue = String(value);
+                                    }
+                                  }
+                                } else {
+                                  displayValue = String(value);
+                                }
+                                
+                                return (
+                                  <div key={`collapsed-${index}`} className="tabulator-responsive-collapse-item">
+                                    <div className="tabulator-responsive-collapse-label">{column.header}:</div>
+                                    <div className="tabulator-responsive-collapse-value">{displayValue}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            
+            {/* Custom Pagination */}
+            <div className="mt-4 flex items-center justify-between">
+              <div className="text-sm text-slate-400">
+                Showing {startIndex + 1} to {Math.min(endIndex, filteredCables.length)} of {filteredCables.length} entries
+              </div>
+              <div className="flex items-center space-x-2">
+                <button 
+                  onClick={() => handlePageChange(1)}
+                  disabled={currentPage === 1}
+                  className={`px-3 py-2 border rounded ${currentPage === 1 ? 'border-slate-600 text-slate-500' : 'border-slate-500 hover:bg-slate-600'}`}
+                >
+                  First
+                </button>
+                <button 
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className={`px-3 py-2 border rounded ${currentPage === 1 ? 'border-slate-600 text-slate-500' : 'border-slate-500 hover:bg-slate-600'}`}
+                >
+                  Previous
+                </button>
+                
+                <div className="flex items-center space-x-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    return (
+                      <button 
+                        key={i} 
+                        onClick={() => handlePageChange(pageNum)}
+                        className={`w-10 h-10 flex items-center justify-center rounded ${currentPage === pageNum ? 'bg-blue-600' : 'hover:bg-slate-600'}`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                </div>
+                
+                <button 
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className={`px-3 py-2 border rounded ${currentPage === totalPages ? 'border-slate-600 text-slate-500' : 'border-slate-500 hover:bg-slate-600'}`}
+                >
+                  Next
+                </button>
+                <button 
+                  onClick={() => handlePageChange(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className={`px-3 py-2 border rounded ${currentPage === totalPages ? 'border-slate-600 text-slate-500' : 'border-slate-500 hover:bg-slate-600'}`}
+                >
+                  Last
+                </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Status Bar */}
+        <div className="mt-4 text-sm text-slate-400">
+          Total Records in Database: {totalCount} | 
+          Loaded Records: {cables.length} | 
+          Filtered Results: {filteredCables.length} | 
+          Last Updated: <span suppressHydrationWarning>{new Date().toLocaleString()}</span>
+        </div>
+
+        {/* Pagination is now handled in the custom table component */}
+      </div>
+    </div>
+  );
+}
