@@ -1,0 +1,39 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "18"
+  NPM_VERSION = "9"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[[redirects]]
+  from = "/login"
+  to = "/auth/signin"
+  status = 301
+
+[[redirects]]
+  from = "/signup"
+  to = "/auth/signup"
+  status = 301
+
+## IMPORTANT: Do not include a catch-all redirect for Next.js; the plugin handles routing.
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "origin-when-cross-origin"
+    X-XSS-Protection = "1; mode=block"
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"

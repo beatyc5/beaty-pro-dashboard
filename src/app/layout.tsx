@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+// Early bootstrap to initialize Supabase singleton and tracing before any page code
+import "../lib/supabaseBootstrap";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

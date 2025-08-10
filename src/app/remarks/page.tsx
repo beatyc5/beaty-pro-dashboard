@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Home as HomeIcon, RefreshCw, ChevronDown, ChevronUp, ChevronsUpDown, Download, Zap, Search } from 'lucide-react';
 import Link from 'next/link';
 import { dashboardService, DashboardData } from '@/lib/dashboardService';
-import { supabase } from '@/lib/supabase';
+import { getBrowserClient } from '@/lib/supabaseClient';
 
 // Interface for offline cable data
 interface OfflineCable {
@@ -31,7 +31,10 @@ export default function RemarksPage() {
   const [sortColumn, setSortColumn] = useState<keyof OfflineCable | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
+  const [user, setUser] = useState<any>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const itemsPerPage = 10;
+  const [dkFilter, setDkFilter] = useState('');
 
   // Load dashboard data to get offline counts
   const loadDashboardData = async () => {
@@ -49,6 +52,12 @@ export default function RemarksPage() {
   const loadOfflineCablesBySystem = async (system: string) => {
     setLoading(true);
     try {
+      const supabase = getBrowserClient();
+      if (!supabase) {
+        console.error('No Supabase browser client available');
+        setLoading(false);
+        return;
+      }
       const tables = [
         { name: 'wgc_databasewgc_database_pbx', source: 'pbx' },
         { name: 'wgc_databasewgc_database_tv', source: 'tv' },
@@ -72,7 +81,7 @@ export default function RemarksPage() {
           
           if (data) {
             // Add source_table to each record
-            const processedData = data.map(item => ({
+            const processedData = data.map((item: any) => ({
               ...item,
               source_table: table.source,
               system: table.source
@@ -94,7 +103,7 @@ export default function RemarksPage() {
             console.error(`Error fetching offline cables from ${tableInfo.name}:`, error);
           } else if (data) {
             // Add source_table to each record
-            allCables = data.map(item => ({
+            allCables = data.map((item: any) => ({
               ...item,
               source_table: tableInfo.source,
               system: tableInfo.source
@@ -113,14 +122,44 @@ export default function RemarksPage() {
   };
 
   // Initial data load
+  // Auth effect to ensure we only query after session is available
   useEffect(() => {
+    const supabase = getBrowserClient();
+    if (!supabase) return;
+    let mounted = true;
+    const init = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!mounted) return;
+        setUser(session?.user ?? null);
+        setAuthChecked(true);
+      } catch (e) {
+        if (!mounted) return;
+        setUser(null);
+        setAuthChecked(true);
+      }
+    };
+    init();
+    const { data: sub } = supabase.auth.onAuthStateChange((_e: any, session: any) => {
+      setUser(session?.user ?? null);
+      setAuthChecked(true);
+    });
+    return () => {
+      mounted = false;
+      sub.subscription?.unsubscribe?.();
+    };
+  }, []);
+
+  // Load data only after auth confirmed and user exists
+  useEffect(() => {
+    if (!authChecked || !user) return;
     const loadData = async () => {
       await loadDashboardData();
       await loadOfflineCablesBySystem('all');
     };
-    
     loadData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authChecked, user]);
 
   // Handle system change
   const handleSystemChange = (system: string) => {
@@ -170,6 +209,12 @@ export default function RemarksPage() {
       });
     }
     
+    // Apply DK exact-match filter
+    if (dkFilter.trim()) {
+      const norm = dkFilter.trim().toLowerCase();
+      result = result.filter(c => (c.dk ?? '').toString().toLowerCase() === norm);
+    }
+    
     // Apply sorting
     if (sortColumn) {
       result.sort((a, b) => {
@@ -197,7 +242,7 @@ export default function RemarksPage() {
     }
     
     return result;
-  }, [offlineCables, searchTerm, sortColumn, sortDirection]);
+  }, [offlineCables, searchTerm, dkFilter, sortColumn, sortDirection]);
   
   // Pagination logic
   const totalPages = Math.ceil(filteredAndSortedCables.length / itemsPerPage);
@@ -260,7 +305,7 @@ export default function RemarksPage() {
                 
                 const csvContent = [
                   headers.join(','),
-                  ...offlineCables.map((cable: any) => [
+                  ...filteredAndSortedCables.map((cable: any) => [
                     cable.cable_id || '',
                     cable.system || '',
                     cable.dk || '',
@@ -334,6 +379,16 @@ export default function RemarksPage() {
                 className="pl-10 pr-4 py-2 bg-slate-700 rounded w-64 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+            </div>
+            {/* DK exact filter */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="DK (exact)"
+                value={dkFilter}
+                onChange={(e) => { setDkFilter(e.target.value); setCurrentPage(1); }}
+                className="pl-3 pr-3 py-2 bg-slate-700 rounded w-40 focus:outline-none focus:ring-1 focus:ring-blue-500 text-center"
+              />
             </div>
           </div>
         </div>

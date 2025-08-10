@@ -1,4 +1,35 @@
-import { supabase } from './supabase';
+import { getBrowserClient, createServerClient } from './supabaseClient';
+
+// Get Supabase client instance
+// Prefer the singleton browser client in the browser to avoid multiple GoTrueClient instances
+const getSupabaseClient = () => {
+  if (typeof window !== 'undefined') {
+    const client = getBrowserClient();
+    if (!client) {
+      throw new Error('No Supabase browser client available');
+    }
+    return client as any;
+  }
+  return createServerClient() as any;
+};
+
+// Ensure we have an active session before issuing any queries from the browser.
+// Returns the client if authenticated; otherwise returns null (callers should bail early).
+const getAuthedClient = async () => {
+  try {
+    const client = getSupabaseClient();
+    if (!client || typeof window === 'undefined') return null;
+    const { data: { session } } = await client.auth.getSession();
+    if (!session) {
+      console.warn('[wifiService] No active session; skipping REST queries');
+      return null;
+    }
+    return client;
+  } catch (e) {
+    console.warn('[wifiService] Failed to confirm session; skipping REST queries', e);
+    return null;
+  }
+};
 
 // WiFi service for Ship Drawings page
 export const wifiService = {
@@ -7,6 +38,8 @@ export const wifiService = {
     console.log('Fetching cabin offline data...');
     
     try {
+      const authed = await getAuthedClient();
+      if (!authed) return [];
       // Fetch data from all three tables: WiFi, PBX, and TV
       const wifiData = await this.fetchOfflineDataFromTable('wgc_databasewgc_database_wifi', true);
       const pbxData = await this.fetchOfflineDataFromTable('wgc_databasewgc_database_pbx', true);
@@ -35,6 +68,8 @@ export const wifiService = {
   // Helper function to fetch offline data from a specific table
   async fetchOfflineDataFromTable(tableName: string, insideCabin: boolean): Promise<any[]> {
     try {
+      const authed = await getAuthedClient();
+      if (!authed) return [];
       // Use pagination to get all records
       let allData: any[] = [];
       let hasMore = true;
@@ -45,7 +80,7 @@ export const wifiService = {
         const from = page * pageSize;
         const to = from + pageSize - 1;
         
-        const { data: pageData, error: pageError } = await supabase
+        const { data: pageData, error: pageError } = await getSupabaseClient()
           .from(tableName)
           .select('*')
           .range(from, to);
@@ -105,12 +140,14 @@ export const wifiService = {
   
   // Get public WiFi offline data with DK and AP name
   async getPublicWifiOfflineData(): Promise<{dk: string, ap_name: string, device_name: string, user: string}[]> {
-    console.log('Fetching public WiFi offline data...');
+    console.log('Analyzing WiFi table for public offline APs...');
     
     try {
-      // First, let's check what fields are available in the table
-      console.log('Checking WiFi table structure...');
-      const { data: sampleData, error: sampleError } = await supabase
+      const authed = await getAuthedClient();
+      if (!authed) return [];
+      // First, verify that the table exists and get sample fields
+      console.log('Fetching data from wgc_databasewgc_database_wifi using special method...');
+      const { data: sampleData, error: sampleError } = await getSupabaseClient()
         .from('wgc_databasewgc_database_wifi')
         .select('*')
         .limit(1);
@@ -140,7 +177,7 @@ export const wifiService = {
         const from = page * pageSize;
         const to = from + pageSize - 1;
         
-        const { data: pageData, error: pageError } = await supabase
+        const { data: pageData, error: pageError } = await getSupabaseClient()
           .from('wgc_databasewgc_database_wifi')
           .select('*')
           .range(from, to);

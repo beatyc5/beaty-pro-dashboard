@@ -1,33 +1,52 @@
-import { createClient } from '@supabase/supabase-js';
+// Re-export helpers from the unified Supabase client without creating a client at module scope
+import { getBrowserClient } from './supabaseClient';
 
-// Supabase credentials
-const supabaseUrl = 'https://tujvrmtvzweetklemhzd.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR1anZybXR2endlZXRrbGVtaHpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM4NjE4NDgsImV4cCI6MjA2OTQzNzg0OH0.-7P_XAGCGJn7GXAGlfqDKj3P6zOP4lttk5cThjKRoXs';
-
-// Create a single supabase client for interacting with your database with optimized settings
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true
-  },
-  db: {
-    schema: 'public',
-  }
-});
+// Backwards-compatible accessor that lazily returns the browser client.
+// Avoids SSR/null issues and prevents repeated "Failed to get browser client" logs.
+export const getSupabase = () => getBrowserClient();
+// Maintain a module-level reference for internal helper functions in this file
+// Guarded to only instantiate on the client to avoid SSR issues
+export const supabase = (typeof window !== 'undefined' ? getBrowserClient() : null) as any;
 
 // Auth utilities
 export const signOut = async () => {
-  const { error } = await supabase.auth.signOut()
-  if (error) {
-    console.error('Error signing out:', error)
+  try {
+    const supabase = getBrowserClient();
+    if (!supabase) {
+      throw new Error('No browser client available');
+    }
+    // First clear any local storage tokens that might be keeping the session alive
+    localStorage.removeItem('supabase.auth.token');
+    localStorage.removeItem('sb-refresh-token');
+    localStorage.removeItem('sb-access-token');
+    
+    // Then perform the actual signOut
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error('Error signing out:', error)
+    }
+    
+    console.log('Signing out and redirecting to /auth/signin')
+    
+    // Hard redirect to login page
+    window.location.replace('/auth/signin')
+    
+    return { error }
+  } catch (e) {
+    console.error('Exception during sign out:', e)
+    // Fallback redirect
+    window.location.href = '/auth/signin'
+    return { error: e }
   }
-  return { error }
 }
 
 export const getCurrentUser = async () => {
-  const { data: { user }, error } = await supabase.auth.getUser()
-  return { user, error }
+  const supabase = getBrowserClient();
+  if (!supabase) {
+    return { user: null, error: new Error('No browser client available') };
+  }
+  const { data: { session }, error } = await supabase.auth.getSession()
+  return { user: session?.user ?? null, error }
 }
 
 
@@ -84,7 +103,7 @@ export const cableService = {
       
       if (data && data.length > 0) {
         // Process data to ensure device_name___extension field is available
-        const processedData = data.map(item => ({
+        const processedData = data.map((item: any) => ({
           ...item,
           // Add device_name___extension field if not present
           device_name___extension: item.device_name___extension || `${item.system}-${item.cable_id}` || ''
@@ -651,14 +670,14 @@ export const cabinCableService = {
           console.error('🔥 Error fetching online status:', extractedError);
         } else if (extractedData) {
           // Debug: Check what data we have for C20136/pbx20136
-          const c20136Record = extractedData.find(r => r.cable_id === 'C20136');
+          const c20136Record = extractedData.find((r: any) => r.cable_id === 'C20136');
           if (c20136Record) {
             console.log('🔍 DEBUG: Found C20136 in extracted table:', c20136Record);
           }
           
           // Create a map for fast lookup with ID format conversion
           const onlineStatusMap = new Map();
-          extractedData.forEach(record => {
+          extractedData.forEach((record: any) => {
             if (record.cable_id && record.online__controller_ !== undefined) {
               // Store with original format
               onlineStatusMap.set(record.cable_id, record.online__controller_);
@@ -727,7 +746,7 @@ export const cabinCableService = {
       
       if (data && data.length > 0) {
         // Add source_table field to each record
-        const processedData = data.map(item => ({
+        const processedData = data.map((item: any) => ({
           ...item,
           source_table: sourceType
         }));
@@ -886,7 +905,7 @@ export const cabinCableService = {
     }
     
     // Add source_table to each record
-    return (data || []).map(item => ({
+    return (data || []).map((item: any) => ({
       ...item,
       source_table: sourceType
     }));
@@ -942,7 +961,7 @@ export const cabinCableService = {
       
       if (data && data.length > 0) {
         // Add source_table to each record
-        const processedData = data.map(item => ({
+        const processedData = data.map((item: any) => ({
           ...item,
           source_table: sourceType
         }));

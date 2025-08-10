@@ -1,0 +1,11 @@
+# Exclude large/local-only directories from Vercel upload
+node_modules/
+.next/
+backups/
+_public wifi webview/
+# Exclude huge static PDFs for now (move to external storage/CDN later)
+public/pdfs/
+# Misc
+.DS_Store
+*.log
+.vercel/

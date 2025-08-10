@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
-import { createBrowserClient } from '@supabase/ssr'
+import { getBrowserClient } from '../../lib/supabaseClient'
 import { Zap, Eye, EyeOff, Loader2 } from 'lucide-react'
 
 export default function SignIn() {
@@ -11,23 +11,41 @@ export default function SignIn() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const [supabaseClient, setSupabaseClient] = useState<ReturnType<typeof getBrowserClient> | null>(null)
+  useEffect(() => {
+    // Initialize browser client only on the client to avoid SSR null
+    const c = getBrowserClient()
+    if (!c) {
+      console.error('Failed to get browser client')
+    }
+    setSupabaseClient(c)
+  }, [])
 
-  const { redirectTo } = router.query
+  const { redirectTo, loggedOut } = router.query
 
   useEffect(() => {
     // Check if user is already authenticated
     const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        router.push(redirectTo as string || '/')
+      if (!supabaseClient) {
+        console.error('No Supabase client available')
+        return
+      }
+
+      try {
+        // Use getSession() to avoid AuthSessionMissingError when no session exists
+        const { data: { session }, error } = await supabaseClient.auth.getSession()
+        if (error) {
+          console.warn('getSession error (likely no active session):', error)
+        }
+        // Do NOT auto-redirect away from the sign-in page on mount.
+        // This prevents redirect loops/flashing when a stale cookie exists.
+        // We'll redirect only after a successful sign-in action.
+      } catch (err) {
+        console.error('Exception in checkUser:', err)
       }
     }
     checkUser()
-  }, [supabase, router, redirectTo])
+  }, [supabaseClient, router, redirectTo, loggedOut])
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -35,7 +53,11 @@ export default function SignIn() {
     setError(null)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      if (!supabaseClient) {
+        throw new Error('Supabase client not available')
+      }
+      
+      const { error } = await supabaseClient.auth.signInWithPassword({
         email,
         password,
       })
@@ -43,11 +65,35 @@ export default function SignIn() {
       if (error) {
         setError(error.message)
       } else {
-        // Redirect to the intended page or dashboard
-        router.push(redirectTo as string || '/')
+        console.log('Login successful, preparing redirect...')
+        // Wait for session to be fully available so middleware sees cookies
+        const target = (typeof redirectTo === 'string' && redirectTo) ? redirectTo : '/'
+        const deadline = Date.now() + 1500
+        let sessionReady = false
+        try {
+          while (Date.now() < deadline) {
+            const { data: { session } } = await supabaseClient.auth.getSession()
+            if (session?.access_token) {
+              sessionReady = true
+              break
+            }
+            await new Promise(r => setTimeout(r, 100))
+          }
+        } catch (e) {
+          // no-op
+        }
+        console.log('Redirecting to:', target, 'sessionReady=', sessionReady)
+        setTimeout(() => {
+          try {
+            window.location.replace(target)
+          } catch {
+            window.location.href = target
+          }
+        }, sessionReady ? 50 : 300)
       }
-    } catch (err) {
-      setError('An unexpected error occurred')
+    } catch (error: any) {
+      setError(error.message || 'An unexpected error occurred')
+      console.error('Login error:', error)
     } finally {
       setLoading(false)
     }

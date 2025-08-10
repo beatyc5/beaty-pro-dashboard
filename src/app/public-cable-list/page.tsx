@@ -163,6 +163,8 @@ export default function PublicCableList() {
           (cable.side?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
           (cable.location?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
           (cable.system?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+          // Include device name in global search
+          ((cable as any).device_name___extension?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
           (cable.installed?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
           (cable.mac_address?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
           (cable.user?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
@@ -179,8 +181,19 @@ export default function PublicCableList() {
       for (const [field, filterValue] of Object.entries(columnFilters)) {
         if (!filterValue) continue; // Skip empty filters
         
-        const cableValue = String(cable[field as keyof Cable] || '').toLowerCase();
-        if (!cableValue.includes(filterValue.toLowerCase())) {
+        const cableValue = String(cable[field as keyof Cable] ?? '').toLowerCase();
+        const filterNorm = String(filterValue).toLowerCase().trim();
+        
+        // Exact match for DK to avoid matching DK 12 when filtering DK 2
+        if (field === 'dk') {
+          if (cableValue !== filterNorm) {
+            return false;
+          }
+          continue;
+        }
+        
+        // Default: substring match
+        if (!cableValue.includes(filterNorm)) {
           return false;
         }
       }
@@ -454,6 +467,36 @@ export default function PublicCableList() {
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 <span>Refresh</span>
               </button>
+
+              {/* Clear Filters */}
+              <button
+                onClick={() => {
+                  setSearchTerm('');
+                  setColumnFilters({
+                    id: '',
+                    cable_id: '',
+                    area: '',
+                    dk: '',
+                    fz: '',
+                    frame: '',
+                    side: '',
+                    location: '',
+                    system: '',
+                    installed: '',
+                    mac_address: '',
+                    user: '',
+                    beaty_remarks: '',
+                    rdp_yard: '',
+                    switch: '',
+                    blade_port: ''
+                  });
+                  setCurrentPage(1);
+                }}
+                className="bg-slate-600 hover:bg-slate-500 px-3 py-2 rounded text-sm"
+                aria-label="Clear all filters"
+              >
+                Clear Filters
+              </button>
             </div>
           </div>
         </div>
@@ -466,14 +509,10 @@ export default function PublicCableList() {
               <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4" />
               <p>Loading data...</p>
             </div>
-          ) : filteredCables.length === 0 ? (
-            <div className="mt-8 text-center text-slate-400">
-              <p>No results found.</p>
-            </div>
           ) : (
             <div className="overflow-x-auto w-full">
-                {/* Using global flash-offline class from globals.css */}
-                <table className="min-w-full bg-slate-800 text-sm border-collapse">
+              {/* Using global flash-offline class from globals.css */}
+              <table className="min-w-full bg-slate-800 text-sm border-collapse">
                 <thead>
                   <tr className="border-b border-slate-600 text-center">
                     <th className="p-3 w-10 border border-slate-600">
@@ -482,6 +521,7 @@ export default function PublicCableList() {
                         className="rounded border-slate-500"
                         onChange={handleSelectAll}
                         checked={currentPageData.length > 0 && currentPageData.every(cable => selectedRows.has(cable.id))}
+                        aria-label="Select all visible rows"
                       />
                     </th>
                     {columns.map((column, index) => (
@@ -516,6 +556,7 @@ export default function PublicCableList() {
                             }}
                             onClick={(e) => e.stopPropagation()}
                             className="bg-slate-600 border border-slate-500 rounded px-2 py-1 text-xs w-full focus:outline-none focus:border-blue-500"
+                            aria-label={`Filter by ${column.header}`}
                           />
                           <Search className="w-3 h-3 absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-400" />
                         </div>
@@ -524,81 +565,90 @@ export default function PublicCableList() {
                   </tr>
                 </thead>
                 <tbody>
-                  {currentPageData.map((cable) => (
-                    <tr 
-                      key={cable.id} 
-                      className={`border-b border-slate-600 hover:bg-slate-700 ${selectedRows.has(cable.id) ? 'bg-slate-700 bg-opacity-50' : ''}`}
-                    >
-                      <td className="p-3 text-center border border-slate-600">
-                        <input 
-                          type="checkbox" 
-                          className="rounded border-slate-500"
-                          checked={selectedRows.has(cable.id)}
-                          onChange={() => handleRowSelect(cable.id)}
-                        />
+                  {filteredCables.length === 0 ? (
+                    <tr>
+                      <td colSpan={columns.length + 1} className="p-6 text-center text-slate-400">
+                        No results found. Adjust or clear filters to see data.
                       </td>
-                      {columns.map((column, index) => {
-                        const value = cable[column.field as keyof Cable];
-                        let displayValue = '';
-                        
-                        // Format values appropriately based on column type
-                        if (value !== undefined && value !== null) {
-                          if (column.field === 'length' || column.field === 'diameter') {
-                            displayValue = typeof value === 'number' ? value.toFixed(2) : String(value);
-                          } else if (column.field === 'installation_date') {
-                            try {
-                              const date = new Date(String(value));
-                              displayValue = date.toLocaleDateString();
-                            } catch (e) {
+                    </tr>
+                  ) : (
+                    currentPageData.map((cable) => (
+                      <tr 
+                        key={cable.id} 
+                        className={`border-b border-slate-600 hover:bg-slate-700 ${selectedRows.has(cable.id) ? 'bg-slate-700 bg-opacity-50' : ''}`}
+                      >
+                        <td className="p-3 text-center border border-slate-600">
+                          <input 
+                            type="checkbox" 
+                            className="rounded border-slate-500"
+                            checked={selectedRows.has(cable.id)}
+                            onChange={() => handleRowSelect(cable.id)}
+                            aria-label={`Select row for cable ${String(cable.cable_id || cable.id)}`}
+                          />
+                        </td>
+                        {columns.map((column, index) => {
+                          const value = cable[column.field as keyof Cable];
+                          let displayValue = '';
+                          
+                          // Format values appropriately based on column type
+                          if (value !== undefined && value !== null) {
+                            if (column.field === 'length' || column.field === 'diameter') {
+                              displayValue = typeof value === 'number' ? value.toFixed(2) : String(value);
+                            } else if (column.field === 'installation_date') {
+                              try {
+                                const date = new Date(String(value));
+                                displayValue = date.toLocaleDateString();
+                              } catch (e) {
+                                displayValue = String(value);
+                              }
+                            } else {
                               displayValue = String(value);
                             }
-                          } else {
-                            displayValue = String(value);
                           }
-                        }
-                        
-                        // Apply flash-offline class to cells when cable is offline
-                        const cableAny = cable as any;
-                        const onlineController = cableAny.online__controller_ || cableAny['online__controller_'] || cableAny.online_controller;
-                        const isOffline = onlineController === 'OFFLINE' || onlineController === false || onlineController === 'false' || onlineController === 'no' || onlineController === 0;
-                        
-                        return (
-                          <td 
-                            key={index} 
-                            className={`p-3 text-center border border-slate-600 ${isOffline ? 'flash-offline' : ''}`}
-                          >
-                            {displayValue}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
+                          
+                          // Apply flash-offline class to cells when cable is offline
+                          const cableAny = cable as any;
+                          const onlineController = cableAny.online__controller_ || cableAny['online__controller_'] || cableAny.online_controller;
+                          const isOffline = onlineController === 'OFFLINE' || onlineController === false || onlineController === 'false' || onlineController === 'no' || onlineController === 0;
+                          
+                          return (
+                            <td 
+                              key={index} 
+                              className={`p-3 text-center border border-slate-600 ${isOffline ? 'flash-offline' : ''}`}
+                            >
+                              {displayValue}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
               
               {/* Custom Pagination */}
               <div className="mt-4 flex items-center justify-between">
                 <div className="text-sm text-slate-400">
-                  Showing {startIndex + 1} to {Math.min(endIndex, filteredCables.length)} of {filteredCables.length} entries
+                  Showing {filteredCables.length === 0 ? 0 : startIndex + 1} to {filteredCables.length === 0 ? 0 : Math.min(endIndex, filteredCables.length)} of {filteredCables.length} entries
                 </div>
                 <div className="flex items-center space-x-2">
                   <button 
                     onClick={() => handlePageChange(1)}
-                    disabled={currentPage === 1}
-                    className={`px-3 py-2 border rounded ${currentPage === 1 ? 'border-slate-600 text-slate-500' : 'border-slate-500 hover:bg-slate-600'}`}
+                    disabled={currentPage === 1 || filteredCables.length === 0}
+                    className={`px-3 py-2 border rounded ${(currentPage === 1 || filteredCables.length === 0) ? 'border-slate-600 text-slate-500' : 'border-slate-500 hover:bg-slate-600'}`}
                   >
                     First
                   </button>
                   <button 
                     onClick={() => handlePageChange(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    className={`px-3 py-2 border rounded ${currentPage === 1 ? 'border-slate-600 text-slate-500' : 'border-slate-500 hover:bg-slate-600'}`}
+                    disabled={currentPage === 1 || filteredCables.length === 0}
+                    className={`px-3 py-2 border rounded ${(currentPage === 1 || filteredCables.length === 0) ? 'border-slate-600 text-slate-500' : 'border-slate-500 hover:bg-slate-600'}`}
                   >
                     Previous
                   </button>
                   
                   <div className="flex items-center space-x-1">
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    {Array.from({ length: Math.min(5, Math.max(1, totalPages)) }, (_, i) => {
                       let pageNum;
                       if (totalPages <= 5) {
                         pageNum = i + 1;
@@ -613,7 +663,8 @@ export default function PublicCableList() {
                         <button 
                           key={i} 
                           onClick={() => handlePageChange(pageNum)}
-                          className={`w-10 h-10 flex items-center justify-center rounded ${currentPage === pageNum ? 'bg-teal-600' : 'hover:bg-slate-600'}`}
+                          disabled={filteredCables.length === 0}
+                          className={`w-10 h-10 flex items-center justify-center rounded ${currentPage === pageNum ? 'bg-teal-600' : 'hover:bg-slate-600'} ${filteredCables.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           {pageNum}
                         </button>
@@ -623,15 +674,15 @@ export default function PublicCableList() {
                   
                   <button 
                     onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                    className={`px-3 py-2 border rounded ${currentPage === totalPages ? 'border-slate-600 text-slate-500' : 'border-slate-500 hover:bg-slate-600'}`}
+                    disabled={currentPage === totalPages || filteredCables.length === 0}
+                    className={`px-3 py-2 border rounded ${(currentPage === totalPages || filteredCables.length === 0) ? 'border-slate-600 text-slate-500' : 'border-slate-500 hover:bg-slate-600'}`}
                   >
                     Next
                   </button>
                   <button 
                     onClick={() => handlePageChange(totalPages)}
-                    disabled={currentPage === totalPages}
-                    className={`px-3 py-2 border rounded ${currentPage === totalPages ? 'border-slate-600 text-slate-500' : 'border-slate-500 hover:bg-slate-600'}`}
+                    disabled={currentPage === totalPages || filteredCables.length === 0}
+                    className={`px-3 py-2 border rounded ${(currentPage === totalPages || filteredCables.length === 0) ? 'border-slate-600 text-slate-500' : 'border-slate-500 hover:bg-slate-600'}`}
                   >
                     Last
                   </button>

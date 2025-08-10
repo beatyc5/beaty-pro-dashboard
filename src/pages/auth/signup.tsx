@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
-import { createBrowserClient } from '@supabase/ssr'
+import { getBrowserClient } from '../../lib/supabaseClient'
 import { Zap, Eye, EyeOff, Loader2 } from 'lucide-react'
 
 export default function SignUp() {
@@ -14,21 +14,36 @@ export default function SignUp() {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const router = useRouter()
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const [supabaseClient, setSupabaseClient] = useState<ReturnType<typeof getBrowserClient> | null>(null)
+  useEffect(() => {
+    const c = getBrowserClient()
+    if (!c) console.error('Failed to get browser client')
+    setSupabaseClient(c)
+  }, [])
 
   useEffect(() => {
     // Check if user is already authenticated
     const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        router.push('/')
+      if (!supabaseClient) {
+        console.error('No Supabase client available')
+        return
+      }
+
+      try {
+        // Use getSession to avoid AuthSessionMissingError when no session exists
+        const { data: { session }, error } = await supabaseClient.auth.getSession()
+        if (error) {
+          console.warn('getSession error (likely no active session):', error)
+        }
+        if (session?.user) {
+          router.push('/')
+        }
+      } catch (err) {
+        console.error('Exception in checkUser:', err)
       }
     }
     checkUser()
-  }, [supabase, router])
+  }, [supabaseClient, router])
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -49,7 +64,11 @@ export default function SignUp() {
     }
 
     try {
-      const { error } = await supabase.auth.signUp({
+      if (!supabaseClient) {
+        throw new Error('Supabase client not available')
+      }
+
+      const { error } = await supabaseClient.auth.signUp({
         email,
         password,
         options: {
@@ -62,8 +81,9 @@ export default function SignUp() {
       } else {
         setMessage('Check your email for the confirmation link!')
       }
-    } catch (err) {
-      setError('An unexpected error occurred')
+    } catch (error: any) {
+      setError(error.message || 'An unexpected error occurred')
+      console.error('Sign up error:', error)
     } finally {
       setLoading(false)
     }

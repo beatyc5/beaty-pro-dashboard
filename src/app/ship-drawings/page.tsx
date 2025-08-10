@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { ZoomIn, ZoomOut, RotateCcw, Home as HomeIcon, Plus, Minus, RefreshCw, Zap } from 'lucide-react';
 import { wifiService } from '../../lib/wifiService';
+import { getBrowserClient } from '../../lib/supabaseClient';
 
 // Add type declaration for PDF.js on window object
 declare global {
@@ -82,7 +83,7 @@ export default function ShipDrawingsPage() {
     }
   }, [viewType]);
 
-  // Load WiFi offline data only when a view type is selected
+  // Load WiFi offline data only when a view type is selected AND user is authenticated
   useEffect(() => {
     if (!viewType) return;
     
@@ -90,6 +91,28 @@ export default function ShipDrawingsPage() {
       setWifiLoading(true);
       setCabinLoading(true);
       try {
+        // Ensure we are authenticated before issuing any REST queries
+        const client = getBrowserClient();
+        if (!client) {
+          console.warn('[ShipDrawings] No Supabase client, skipping data fetch');
+          setWifiLoading(false);
+          setCabinLoading(false);
+          return;
+        }
+        // Poll briefly for an active session to avoid INITIAL_SESSION fetches
+        const deadline = Date.now() + 2000;
+        let sessionReady = false;
+        while (Date.now() < deadline) {
+          const { data: { session } } = await client.auth.getSession();
+          if (session?.access_token) { sessionReady = true; break; }
+          await new Promise(r => setTimeout(r, 100));
+        }
+        if (!sessionReady) {
+          console.warn('[ShipDrawings] No active session after wait; skipping data fetch');
+          setWifiLoading(false);
+          setCabinLoading(false);
+          return;
+        }
         // Fetch public WiFi offline data for WIFI Public view
         const publicData = await wifiService.getPublicWifiOfflineData();
         setWifiOfflineData(publicData);

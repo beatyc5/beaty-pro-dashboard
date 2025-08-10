@@ -46,7 +46,7 @@ export default function CabinCableList() {
         // Create set of offline cable IDs
         const offlineIds = new Set<string>();
         if (offlineCables) {
-          offlineCables.forEach(cable => {
+          offlineCables.forEach((cable: { cable_id?: string }) => {
             if (cable.cable_id) {
               offlineIds.add(cable.cable_id);
             }
@@ -145,8 +145,19 @@ export default function CabinCableList() {
       for (const [field, filterValue] of Object.entries(columnFilters)) {
         if (!filterValue) continue; // Skip empty filters
         
-        const cableValue = String(cable[field as keyof CabinCable] || '').toLowerCase();
-        if (!cableValue.includes(filterValue.toLowerCase())) {
+        const cableValue = String(cable[field as keyof CabinCable] ?? '').toLowerCase();
+        const filterNorm = String(filterValue).toLowerCase().trim();
+        
+        // Exact match for DK to avoid matching DK 12 when filtering DK 2
+        if (field === 'dk') {
+          if (cableValue !== filterNorm) {
+            return false;
+          }
+          continue;
+        }
+        
+        // Default: substring match
+        if (!cableValue.includes(filterNorm)) {
           return false;
         }
       }
@@ -485,8 +496,8 @@ export default function CabinCableList() {
                 <tbody>
                   {currentPageData && currentPageData.length > 0 ? currentPageData.map((cable, index) => (
                     <tr 
-                      key={cable.id} 
-                      className={`border-b border-slate-600 hover:bg-slate-700 ${selectedRows.has(cable.id) ? 'bg-slate-700 bg-opacity-50' : ''}`}
+                      key={getUniqueKey(cable)} 
+                      className={`border-b border-slate-600 hover:bg-slate-700 ${selectedRows.has(getUniqueKey(cable)) ? 'bg-slate-700 bg-opacity-50' : ''}`}
                     >
                       <td className="p-3 border border-slate-600">
                         <input 

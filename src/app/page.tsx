@@ -23,8 +23,7 @@ import {
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { dashboardService, DashboardData } from '../lib/dashboardService';
-import { signOut } from '../lib/supabase';
-import { createBrowserClient } from '@supabase/ssr';
+import { signOut, getBrowserClient } from '../lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
@@ -33,8 +32,11 @@ export default function Home() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
+  const [authChecked, setAuthChecked] = useState<boolean>(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const router = useRouter();
+  // Only show protected UI after auth confirms a user
+  const showProtected = authChecked && !!user;
 
   // Fake data for the line chart - online status from Week 3 to Week 28
   const chartData = [
@@ -123,7 +125,9 @@ export default function Home() {
     }
   }, [dashboardData]);
 
+  // Fetch dashboard data only after auth is checked and a user exists
   useEffect(() => {
+    if (!authChecked || !user) return;
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
@@ -138,40 +142,116 @@ export default function Home() {
         setLoading(false);
       }
     };
-
     fetchDashboardData();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authChecked, user]);
 
-  // Auth effect
+  // Auth effect: confirm session with getUser() before showing dashboard.
   useEffect(() => {
-    // Create browser client for client-side auth
-    const supabaseBrowser = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
+    const supabaseBrowser = getBrowserClient();
+    if (!supabaseBrowser) {
+      console.error('Failed to get browser client');
+      return;
+    }
 
-    const getUser = async () => {
-      const { data: { user }, error } = await supabaseBrowser.auth.getUser();
-      setUser(user);
+    const confirmSession = async () => {
+      try {
+        // First check if a session exists locally
+        const { data: { session } } = await supabaseBrowser.auth.getSession();
+        if (!session) {
+          setUser(null);
+          setAuthChecked(true);
+          return;
+        }
+        // Validate the session with the server. If token is expired/invalid, this will fail,
+        // preventing a dashboard flash followed by redirect.
+        const { data: userResp, error: userErr } = await supabaseBrowser.auth.getUser();
+        if (userErr || !userResp?.user) {
+          console.warn('Session invalid or user not found; treating as signed out');
+          setUser(null);
+          setAuthChecked(true);
+          return;
+        }
+        setUser(userResp.user);
+        setAuthChecked(true);
+      } catch (e) {
+        console.error('Error confirming session:', e);
+        setUser(null);
+        setAuthChecked(true);
+      }
     };
-    
-    getUser();
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabaseBrowser.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null);
-    });
+    confirmSession();
+
+    // Listen for auth changes and re-confirm when signed in
+    const { data: { subscription } } = supabaseBrowser.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state changed:', event);
+        if (event === 'SIGNED_OUT') {
+          setUser(null);
+          return;
+        }
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
+          try {
+            if (session?.user) {
+              setUser(session.user);
+            } else {
+              const { data: userResp, error: userErr } = await supabaseBrowser.auth.getUser();
+              if (!userErr && userResp?.user) setUser(userResp.user);
+            }
+          } catch {}
+        }
+      }
+    );
 
     return () => subscription.unsubscribe();
   }, []);
 
+  // Client-side guard: patiently wait for session before deciding to redirect.
+  // This prevents a brief flash to the dashboard followed by an unnecessary sign-in redirect on first load.
+  useEffect(() => {
+    if (!authChecked || user) return;
+    let cancelled = false;
+    const supabaseBrowser = getBrowserClient();
+    const start = Date.now();
+    const maxWaitMs = 2500; // allow time for session restoration on cold loads
+
+    const waitForSessionThenMaybeRedirect = async () => {
+      if (!supabaseBrowser) return router.replace('/auth/signin?loggedOut=1');
+      try {
+        while (!cancelled && Date.now() - start < maxWaitMs) {
+          const { data: { session } } = await supabaseBrowser.auth.getSession();
+          if (session?.user) {
+            // Session appeared; stop checking and keep the user on the page
+            setUser(session.user);
+            return;
+          }
+          await new Promise(r => setTimeout(r, 150));
+        }
+      } catch (_) {
+        // fall through to redirect
+      }
+      if (!cancelled) {
+        router.replace('/auth/signin?loggedOut=1');
+      }
+    };
+
+    waitForSessionThenMaybeRedirect();
+    return () => { cancelled = true; };
+  }, [authChecked, user, router]);
+
   const handleSignOut = async () => {
-    const supabaseBrowser = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-    await supabaseBrowser.auth.signOut();
-    router.push('/auth/signin');
+    // Use the unified signOut function from supabaseClient
+    try {
+      await signOut();
+    } finally {
+      // Client-side fallback to ensure navigation even if network is slow
+      try {
+        router.replace('/auth/signin?loggedOut=1');
+      } catch (e) {
+        // no-op
+      }
+    }
   };
 
   const truncateEmail = (email: string) => {
@@ -180,6 +260,18 @@ export default function Home() {
     }
     return email;
   };
+
+  if (!showProtected) {
+    // Render a minimal placeholder to avoid flashing dashboard before redirect/sign-in
+    return (
+      <div className="min-h-screen bg-slate-800 text-white flex items-center justify-center">
+        <div className="flex items-center space-x-2 text-slate-300 text-sm">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Checking session…</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-800 text-white">
@@ -228,7 +320,7 @@ export default function Home() {
               </div>
             ) : (
               <Link
-                href="/auth/signin"
+                href="/auth/signin?loggedOut=1"
                 className="flex items-center space-x-2 bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-md transition-colors"
               >
                 <User className="w-4 h-4" />
