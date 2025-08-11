@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ZoomIn, ZoomOut, RotateCcw, Home as HomeIcon, Plus, Minus, RefreshCw, Zap } from 'lucide-react';
@@ -13,9 +13,16 @@ declare global {
     pdfjsLib: any;
   }
 }
+export default function ShipDrawingsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 text-slate-200 flex items-center justify-center">Loading…</div>}>
+      <ShipDrawingsPageInner />
+    </Suspense>
+  );
+}
 
 // This is our Ship Drawings page with PDF viewer functionality
-export default function ShipDrawingsPage() {
+function ShipDrawingsPageInner() {
   const searchParams = useSearchParams();
   // State variables for PDF viewer
   const [pdfDocs, setPdfDocs] = useState<string[]>([]);
