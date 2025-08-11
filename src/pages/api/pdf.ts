@@ -23,6 +23,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const range = req.headers['range'] as string | undefined
     const headers: Record<string, string> = { }
     if (range) headers['Range'] = range
+    const cookie = req.headers['cookie'] as string | undefined
+    if (cookie) headers['Cookie'] = cookie
+    const auth = req.headers['authorization'] as string | undefined
+    if (auth) headers['Authorization'] = auth
+    const ua = req.headers['user-agent'] as string | undefined
+    if (ua) headers['User-Agent'] = ua
+    const accept = req.headers['accept'] as string | undefined
+    if (accept) headers['Accept'] = accept
+    const referer = req.headers['referer'] as string | undefined
+    if (referer) headers['Referer'] = referer
 
     const resp = await fetch(url, { headers })
     if (!resp.ok) {
