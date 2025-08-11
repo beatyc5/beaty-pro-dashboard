@@ -29,6 +29,16 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* iPad/Safari: prevent unexpected text auto-zoom */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+/* iPad/iOS: enable smooth momentum scrolling in horizontal scroll areas */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Custom Dark Theme for AG Grid */
 .ag-theme-alpine {
   --ag-background-color: #1e293b; /* slate-800 */

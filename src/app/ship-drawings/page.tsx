@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ZoomIn, ZoomOut, RotateCcw, Home as HomeIcon, Plus, Minus, RefreshCw, Zap } from 'lucide-react';
 import { wifiService } from '../../lib/wifiService';
@@ -12,9 +13,17 @@ declare global {
     pdfjsLib: any;
   }
 }
+export default function ShipDrawingsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900 text-slate-200 flex items-center justify-center">Loading…</div>}>
+      <ShipDrawingsPageInner />
+    </Suspense>
+  );
+}
 
 // This is our Ship Drawings page with PDF viewer functionality
-export default function ShipDrawingsPage() {
+function ShipDrawingsPageInner() {
+  const searchParams = useSearchParams();
   // State variables for PDF viewer
   const [pdfDocs, setPdfDocs] = useState<string[]>([]);
   const [selectedPdf, setSelectedPdf] = useState<string>('');
@@ -28,6 +37,10 @@ export default function ShipDrawingsPage() {
   const [cabinOfflineData, setCabinOfflineData] = useState<Array<{dk: string, wifi: number, phone: number, tv: number, total: number}>>([]);
   const [cabinLoading, setCabinLoading] = useState<boolean>(false);
   const [viewType, setViewType] = useState<'wifi-public' | 'cabin-view' | null>(null);
+  const [debug, setDebug] = useState<string>('');
+  // Debug: discovered PDFs in deployment (filled when ?debug=1)
+  const [dbgWifiPdfs, setDbgWifiPdfs] = useState<string[] | null>(null);
+  const [dbgCabinPdfs, setDbgCabinPdfs] = useState<string[] | null>(null);
 
   // Use refs for panning state to avoid re-renders during pan operations
   const startXRef = useRef<number>(0);
@@ -180,13 +193,9 @@ export default function ShipDrawingsPage() {
 
   // Function to get the correct PDF path based on view type
   const getPdfPath = (pdfName: string) => {
-    if (viewType === 'wifi-public') {
-      return `/pdfs/${pdfName}`;
-    } else {
-      // For cabin view, use the PDFs from the public folder
-      // We need to use a path that's accessible via the web server
-      return `/pdfs/cabin/${pdfName}`;
-    }
+    const scope = viewType === 'cabin-view' ? 'cabin' : 'wifi';
+    // Route through API to avoid any preview/static routing discrepancies
+    return `/api/pdf?name=${encodeURIComponent(pdfName)}&scope=${scope}`;
   };
 
   // Load PDF.js library dynamically to avoid SSR issues in Next.js
@@ -199,6 +208,14 @@ export default function ShipDrawingsPage() {
         
         // Set the worker source to the local file we copied to public/
         pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
+
+        // iOS Safari reliability tweaks (avoid streaming/range requests)
+        try {
+          // @ts-ignore
+          pdfjs.disableStream = true;
+          // @ts-ignore
+          pdfjs.disableRange = true;
+        } catch {}
         
         // Add to window object for easier access
         // @ts-ignore
@@ -207,11 +224,30 @@ export default function ShipDrawingsPage() {
       } catch (err) {
         console.error('Error loading PDF.js library:', err);
         setError('Failed to load PDF viewer library: ' + (err instanceof Error ? err.message : String(err)));
+        setDebug((d) => d + `lib: ${(err as any)?.message || String(err)}\n`);
       }
     };
 
     loadPdfLibrary();
   }, []);
+
+  // Debug-only: fetch available PDFs from deployment to confirm filenames/paths
+  useEffect(() => {
+    if (searchParams?.get('debug') !== '1') return;
+    const run = async () => {
+      try {
+        const resp = await fetch('/api/pdf-list');
+        if (!resp.ok) throw new Error(`pdf-list ${resp.status}`);
+        const json = await resp.json();
+        setDbgWifiPdfs(json?.wifi || []);
+        setDbgCabinPdfs(json?.cabin || []);
+        setDebug((d) => d + `list_ok: wifi=${(json?.wifi||[]).length} cabin=${(json?.cabin||[]).length}\n`);
+      } catch (e: any) {
+        setDebug((d) => d + `list_err: ${(e?.message)||String(e)}\n`);
+      }
+    };
+    run();
+  }, [searchParams]);
 
   // Effect to load the selected PDF
   useEffect(() => {
@@ -233,10 +269,35 @@ export default function ShipDrawingsPage() {
         // Get the correct path based on view type
         const pdfPath = getPdfPath(selectedPdf);
         console.log('Loading PDF from:', pdfPath);
+        setDebug((d) => d + `select: ${pdfPath}\n`);
+
+        // Probe the PDF URL (non-blocking): some CDNs return 404 to HEAD on iOS
+        // Use GET with a small Range to avoid full download; proceed regardless of result
+        try {
+          const probe = await fetch(pdfPath, { method: 'GET', headers: { Range: 'bytes=0-0' }, cache: 'no-store' });
+          setDebug((d) => d + `probe: ${probe.status} ${probe.headers.get('content-type') || ''}\n`);
+        } catch (e: any) {
+          setDebug((d) => d + `probe_err: ${e?.message || String(e)}\n`);
+          // Continue to attempt loading via PDF.js
+        }
         
-        // Load the PDF document
-        const loadingTask = window.pdfjsLib.getDocument(pdfPath);
-        const pdfDoc = await loadingTask.promise;
+        // Prefer fetching the PDF ourselves for iOS reliability, then pass ArrayBuffer to PDF.js
+        let pdfDoc: any = null;
+        try {
+          const resp = await fetch(pdfPath, { cache: 'no-store' });
+          setDebug((d) => d + `fetch: ${resp.status} ${resp.headers.get('content-type') || ''}\n`);
+          if (!resp.ok) {
+            throw new Error(`fetch failed status=${resp.status}`);
+          }
+          const ab = await resp.arrayBuffer();
+          const loadingTask = window.pdfjsLib.getDocument({ data: ab, disableStream: true, disableRange: true, disableAutoFetch: true });
+          pdfDoc = await loadingTask.promise;
+        } catch (fetchErr: any) {
+          setDebug((d) => d + `fetch_err: ${fetchErr?.message || String(fetchErr)}\n`);
+          // Fallback: let PDF.js fetch by URL
+          const loadingTask = window.pdfjsLib.getDocument({ url: pdfPath, disableStream: true, disableRange: true, disableAutoFetch: true });
+          pdfDoc = await loadingTask.promise;
+        }
         
         // Store the PDF document in the ref
         pdfDocRef.current = pdfDoc;
@@ -252,6 +313,7 @@ export default function ShipDrawingsPage() {
       } catch (err) {
         console.error('Error loading PDF:', err);
         setError(`Failed to load PDF: ${selectedPdf}. ${err instanceof Error ? err.message : String(err)}`);
+        setDebug((d) => d + `load_err: ${(err as any)?.message || String(err)}\n`);
       } finally {
         setLoading(false);
       }
@@ -364,6 +426,7 @@ export default function ShipDrawingsPage() {
     } catch (err) {
       console.error('Failed to render PDF page:', err);
       setError('Failed to render PDF page: ' + (err instanceof Error ? err.message : String(err)));
+      setDebug((d) => d + `render_err: ${(err as any)?.message || String(err)}\n`);
       pageRenderingRef.current = false;
     }
   };
@@ -594,6 +657,53 @@ export default function ShipDrawingsPage() {
         <div className="absolute top-1/2 transform -translate-y-1/2" style={{ left: 'calc(50% + 64px)' }}>
           <h1 className="text-xl font-semibold text-white">Ship Drawings</h1>
         </div>
+
+        {searchParams?.get('debug') === '1' && (
+          <div className="mt-3 text-xs text-slate-400 whitespace-pre-wrap break-words text-left max-w-4xl mx-auto">
+            <div className="font-semibold text-slate-300">Debug</div>
+            <pre className="overflow-auto max-h-40">{debug}</pre>
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="bg-slate-800 border border-slate-700 rounded p-2">
+                <div className="font-medium text-slate-200 mb-1">Available WiFi PDFs</div>
+                {!dbgWifiPdfs ? (
+                  <div className="text-slate-500">Loading…</div>
+                ) : dbgWifiPdfs.length === 0 ? (
+                  <div className="text-slate-500">None found</div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {dbgWifiPdfs.map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => { setViewType('wifi-public'); setSelectedPdf(f); setDebug((d)=>d+`test_wifi: ${f}\n`); }}
+                        className="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-100"
+                        title={`/api/pdf?name=${encodeURIComponent(f)}&scope=wifi`}
+                      >{f}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="bg-slate-800 border border-slate-700 rounded p-2">
+                <div className="font-medium text-slate-200 mb-1">Available Cabin PDFs</div>
+                {!dbgCabinPdfs ? (
+                  <div className="text-slate-500">Loading…</div>
+                ) : dbgCabinPdfs.length === 0 ? (
+                  <div className="text-slate-500">None found</div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {dbgCabinPdfs.map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => { setViewType('cabin-view'); setSelectedPdf(f); setDebug((d)=>d+`test_cabin: ${f}\n`); }}
+                        className="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-100"
+                        title={`/api/pdf?name=${encodeURIComponent(f)}&scope=cabin`}
+                      >{f}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Main content */}

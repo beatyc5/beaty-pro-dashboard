@@ -10,6 +10,7 @@ export default function SignIn() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [debug, setDebug] = useState<string>("")
   const router = useRouter()
   const [supabaseClient, setSupabaseClient] = useState<ReturnType<typeof getBrowserClient> | null>(null)
   useEffect(() => {
@@ -19,6 +20,23 @@ export default function SignIn() {
       console.error('Failed to get browser client')
     }
     setSupabaseClient(c)
+    try {
+      const storageOK = typeof window !== 'undefined' && !!window.sessionStorage
+      setDebug((d) => d + `init: ua=${navigator.userAgent}\n` + `sessionStorage=${storageOK}\n`)
+      // Network probe to Supabase auth health endpoint to detect iPad network/CORS issues
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      if (supabaseUrl) {
+        fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/health`, { method: 'GET' })
+          .then(async (res) => {
+            setDebug((d) => d + `probe: auth health status=${res.status}\n`)
+          })
+          .catch((err) => {
+            setDebug((d) => d + `probe: auth health error=${err?.message || String(err)}\n`)
+          })
+      } else {
+        setDebug((d) => d + 'probe: NEXT_PUBLIC_SUPABASE_URL missing\n')
+      }
+    } catch {}
   }, [])
 
   const { redirectTo, loggedOut } = router.query
@@ -51,6 +69,7 @@ export default function SignIn() {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setDebug((d) => d + 'submit: starting login\n')
 
     try {
       if (!supabaseClient) {
@@ -64,8 +83,10 @@ export default function SignIn() {
 
       if (error) {
         setError(error.message)
+        setDebug((d) => d + `submit: error=${error.message}\n`)
       } else {
         console.log('Login successful, preparing redirect...')
+        setDebug((d) => d + 'submit: success\n')
         // Wait for session to be fully available so middleware sees cookies
         const target = (typeof redirectTo === 'string' && redirectTo) ? redirectTo : '/'
         const deadline = Date.now() + 1500
@@ -83,17 +104,21 @@ export default function SignIn() {
           // no-op
         }
         console.log('Redirecting to:', target, 'sessionReady=', sessionReady)
+        setDebug((d) => d + `redirect: to=${target} ready=${sessionReady}\n`)
         setTimeout(() => {
           try {
             window.location.replace(target)
           } catch {
             window.location.href = target
           }
+          // Router fallback in case hard redirect is blocked by Safari
+          try { router.replace(target) } catch {}
         }, sessionReady ? 50 : 300)
       }
     } catch (error: any) {
       setError(error.message || 'An unexpected error occurred')
       console.error('Login error:', error)
+      setDebug((d) => d + `catch: ${error?.message || String(error)}\n`)
     } finally {
       setLoading(false)
     }
@@ -114,6 +139,12 @@ export default function SignIn() {
             </span>
           </div>
           <h2 className="text-3xl font-bold text-white">Sign in to your account</h2>
+          {(process.env.NODE_ENV !== 'production' || router.query.debug === '1') && (
+            <div className="mt-3 text-xs text-slate-400 whitespace-pre-wrap break-words text-left max-w-md mx-auto">
+              <div className="font-semibold text-slate-300">Debug</div>
+              <pre className="overflow-auto max-h-40">{debug}</pre>
+            </div>
+          )}
 
         </div>
 
