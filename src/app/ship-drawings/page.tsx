@@ -28,6 +28,7 @@ export default function ShipDrawingsPage() {
   const [cabinOfflineData, setCabinOfflineData] = useState<Array<{dk: string, wifi: number, phone: number, tv: number, total: number}>>([]);
   const [cabinLoading, setCabinLoading] = useState<boolean>(false);
   const [viewType, setViewType] = useState<'wifi-public' | 'cabin-view' | null>(null);
+  const [debug, setDebug] = useState<string>('');
 
   // Use refs for panning state to avoid re-renders during pan operations
   const startXRef = useRef<number>(0);
@@ -199,6 +200,14 @@ export default function ShipDrawingsPage() {
         
         // Set the worker source to the local file we copied to public/
         pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.js';
+
+        // iOS Safari reliability tweaks (avoid streaming/range requests)
+        try {
+          // @ts-ignore
+          pdfjs.disableStream = true;
+          // @ts-ignore
+          pdfjs.disableRange = true;
+        } catch {}
         
         // Add to window object for easier access
         // @ts-ignore
@@ -207,6 +216,7 @@ export default function ShipDrawingsPage() {
       } catch (err) {
         console.error('Error loading PDF.js library:', err);
         setError('Failed to load PDF viewer library: ' + (err instanceof Error ? err.message : String(err)));
+        setDebug((d) => d + `lib: ${(err as any)?.message || String(err)}\n`);
       }
     };
 
@@ -233,6 +243,21 @@ export default function ShipDrawingsPage() {
         // Get the correct path based on view type
         const pdfPath = getPdfPath(selectedPdf);
         console.log('Loading PDF from:', pdfPath);
+        setDebug((d) => d + `select: ${pdfPath}\n`);
+
+        // Probe the PDF URL directly to catch CORS/headers issues on iOS
+        try {
+          const head = await fetch(pdfPath, { method: 'HEAD' });
+          setDebug((d) => d + `probe: ${head.status} ${head.headers.get('content-type') || ''}\n`);
+          if (!head.ok) {
+            throw new Error(`PDF not reachable. status=${head.status}`);
+          }
+        } catch (e: any) {
+          setError(`Failed to fetch PDF: ${e?.message || String(e)}`);
+          setDebug((d) => d + `probe_err: ${e?.message || String(e)}\n`);
+          setLoading(false);
+          return;
+        }
         
         // Load the PDF document
         const loadingTask = window.pdfjsLib.getDocument(pdfPath);
@@ -252,6 +277,7 @@ export default function ShipDrawingsPage() {
       } catch (err) {
         console.error('Error loading PDF:', err);
         setError(`Failed to load PDF: ${selectedPdf}. ${err instanceof Error ? err.message : String(err)}`);
+        setDebug((d) => d + `load_err: ${(err as any)?.message || String(err)}\n`);
       } finally {
         setLoading(false);
       }
@@ -364,6 +390,7 @@ export default function ShipDrawingsPage() {
     } catch (err) {
       console.error('Failed to render PDF page:', err);
       setError('Failed to render PDF page: ' + (err instanceof Error ? err.message : String(err)));
+      setDebug((d) => d + `render_err: ${(err as any)?.message || String(err)}\n`);
       pageRenderingRef.current = false;
     }
   };
