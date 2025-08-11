@@ -190,13 +190,9 @@ function ShipDrawingsPageInner() {
 
   // Function to get the correct PDF path based on view type
   const getPdfPath = (pdfName: string) => {
-    if (viewType === 'wifi-public') {
-      return `/pdfs/${pdfName}`;
-    } else {
-      // For cabin view, use the PDFs from the public folder
-      // We need to use a path that's accessible via the web server
-      return `/pdfs/cabin/${pdfName}`;
-    }
+    const scope = viewType === 'cabin-view' ? 'cabin' : 'wifi';
+    // Route through API to avoid any preview/static routing discrepancies
+    return `/api/pdf?name=${encodeURIComponent(pdfName)}&scope=${scope}`;
   };
 
   // Load PDF.js library dynamically to avoid SSR issues in Next.js
