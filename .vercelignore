@@ -3,6 +3,9 @@ node_modules/
 .next/
 backups/
 _public wifi webview/
+# Exclude large static PDFs to keep Serverless Function size under 250MB.
+# We serve PDFs via /api/pdf from GitHub instead.
+public/pdfs/
 # Misc
 .DS_Store
 *.log
