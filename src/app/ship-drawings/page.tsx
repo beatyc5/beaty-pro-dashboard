@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ZoomIn, ZoomOut, RotateCcw, Home as HomeIcon, Plus, Minus, RefreshCw, Zap } from 'lucide-react';
 import { wifiService } from '../../lib/wifiService';
@@ -15,6 +16,7 @@ declare global {
 
 // This is our Ship Drawings page with PDF viewer functionality
 export default function ShipDrawingsPage() {
+  const searchParams = useSearchParams();
   // State variables for PDF viewer
   const [pdfDocs, setPdfDocs] = useState<string[]>([]);
   const [selectedPdf, setSelectedPdf] = useState<string>('');
@@ -255,9 +257,23 @@ export default function ShipDrawingsPage() {
           // Continue to attempt loading via PDF.js
         }
         
-        // Load the PDF document
-        const loadingTask = window.pdfjsLib.getDocument(pdfPath);
-        const pdfDoc = await loadingTask.promise;
+        // Prefer fetching the PDF ourselves for iOS reliability, then pass ArrayBuffer to PDF.js
+        let pdfDoc: any = null;
+        try {
+          const resp = await fetch(pdfPath, { cache: 'no-store' });
+          setDebug((d) => d + `fetch: ${resp.status} ${resp.headers.get('content-type') || ''}\n`);
+          if (!resp.ok) {
+            throw new Error(`fetch failed status=${resp.status}`);
+          }
+          const ab = await resp.arrayBuffer();
+          const loadingTask = window.pdfjsLib.getDocument({ data: ab, disableStream: true, disableRange: true, disableAutoFetch: true });
+          pdfDoc = await loadingTask.promise;
+        } catch (fetchErr: any) {
+          setDebug((d) => d + `fetch_err: ${fetchErr?.message || String(fetchErr)}\n`);
+          // Fallback: let PDF.js fetch by URL
+          const loadingTask = window.pdfjsLib.getDocument({ url: pdfPath, disableStream: true, disableRange: true, disableAutoFetch: true });
+          pdfDoc = await loadingTask.promise;
+        }
         
         // Store the PDF document in the ref
         pdfDocRef.current = pdfDoc;
@@ -617,6 +633,13 @@ export default function ShipDrawingsPage() {
         <div className="absolute top-1/2 transform -translate-y-1/2" style={{ left: 'calc(50% + 64px)' }}>
           <h1 className="text-xl font-semibold text-white">Ship Drawings</h1>
         </div>
+
+        {searchParams?.get('debug') === '1' && (
+          <div className="mt-3 text-xs text-slate-400 whitespace-pre-wrap break-words text-left max-w-3xl mx-auto">
+            <div className="font-semibold text-slate-300">Debug</div>
+            <pre className="overflow-auto max-h-40">{debug}</pre>
+          </div>
+        )}
       </header>
 
       {/* Main content */}
