@@ -33,6 +33,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (accept) headers['Accept'] = accept
     const referer = req.headers['referer'] as string | undefined
     if (referer) headers['Referer'] = referer
+    const vercelBypass = req.headers['x-vercel-protection-bypass'] as string | undefined
+    if (vercelBypass) headers['x-vercel-protection-bypass'] = vercelBypass
+    const prerenderBypass = req.headers['x-prerender-bypass'] as string | undefined
+    if (prerenderBypass) headers['x-prerender-bypass'] = prerenderBypass
 
     const resp = await fetch(url, { headers })
     if (!resp.ok) {
