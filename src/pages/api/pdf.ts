@@ -1,6 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import fs from 'fs'
-import path from 'path'
+// Proxy PDFs from Next static /pdfs route instead of reading filesystem
 
 export const config = {
   api: {
@@ -8,7 +7,7 @@ export const config = {
   },
 }
 
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     const name = String(req.query.name || '')
     const scope = String(req.query.scope || 'wifi') // 'wifi' or 'cabin'
@@ -16,18 +15,32 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       res.status(400).send('Bad request')
       return
     }
-    const base = scope === 'cabin' ? path.join(process.cwd(), 'public', 'pdfs', 'cabin') : path.join(process.cwd(), 'public', 'pdfs')
-    const filePath = path.join(base, name)
-    if (!fs.existsSync(filePath)) {
-      res.status(404).send('Not found')
+    const rel = scope === 'cabin' ? `/pdfs/cabin/${encodeURIComponent(name)}` : `/pdfs/${encodeURIComponent(name)}`
+    const host = req.headers['x-forwarded-host'] || req.headers.host || ''
+    const proto = (req.headers['x-forwarded-proto'] as string) || 'https'
+    const url = `${proto}://${host}${rel}`
+
+    const range = req.headers['range'] as string | undefined
+    const headers: Record<string, string> = { }
+    if (range) headers['Range'] = range
+
+    const resp = await fetch(url, { headers })
+    if (!resp.ok) {
+      res.status(resp.status).send('Not found')
       return
     }
-    const stat = fs.statSync(filePath)
-    res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Length', stat.size.toString())
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
-    const stream = fs.createReadStream(filePath)
-    stream.pipe(res)
+    resp.headers.forEach((v, k) => {
+      if (k.toLowerCase() === 'content-encoding') return // avoid double encoding
+      res.setHeader(k, v)
+    })
+    res.status(resp.status)
+    const readable = resp.body as any
+    if (readable && typeof readable.pipe === 'function') {
+      readable.pipe(res)
+    } else {
+      const buf = Buffer.from(await resp.arrayBuffer())
+      res.end(buf)
+    }
   } catch (e: any) {
     res.status(500).send(e?.message || 'Server error')
   }
