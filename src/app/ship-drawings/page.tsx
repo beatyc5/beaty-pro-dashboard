@@ -38,6 +38,9 @@ function ShipDrawingsPageInner() {
   const [cabinLoading, setCabinLoading] = useState<boolean>(false);
   const [viewType, setViewType] = useState<'wifi-public' | 'cabin-view' | null>(null);
   const [debug, setDebug] = useState<string>('');
+  // Debug: discovered PDFs in deployment (filled when ?debug=1)
+  const [dbgWifiPdfs, setDbgWifiPdfs] = useState<string[] | null>(null);
+  const [dbgCabinPdfs, setDbgCabinPdfs] = useState<string[] | null>(null);
 
   // Use refs for panning state to avoid re-renders during pan operations
   const startXRef = useRef<number>(0);
@@ -227,6 +230,24 @@ function ShipDrawingsPageInner() {
 
     loadPdfLibrary();
   }, []);
+
+  // Debug-only: fetch available PDFs from deployment to confirm filenames/paths
+  useEffect(() => {
+    if (searchParams?.get('debug') !== '1') return;
+    const run = async () => {
+      try {
+        const resp = await fetch('/api/pdf-list');
+        if (!resp.ok) throw new Error(`pdf-list ${resp.status}`);
+        const json = await resp.json();
+        setDbgWifiPdfs(json?.wifi || []);
+        setDbgCabinPdfs(json?.cabin || []);
+        setDebug((d) => d + `list_ok: wifi=${(json?.wifi||[]).length} cabin=${(json?.cabin||[]).length}\n`);
+      } catch (e: any) {
+        setDebug((d) => d + `list_err: ${(e?.message)||String(e)}\n`);
+      }
+    };
+    run();
+  }, [searchParams]);
 
   // Effect to load the selected PDF
   useEffect(() => {
@@ -638,9 +659,49 @@ function ShipDrawingsPageInner() {
         </div>
 
         {searchParams?.get('debug') === '1' && (
-          <div className="mt-3 text-xs text-slate-400 whitespace-pre-wrap break-words text-left max-w-3xl mx-auto">
+          <div className="mt-3 text-xs text-slate-400 whitespace-pre-wrap break-words text-left max-w-4xl mx-auto">
             <div className="font-semibold text-slate-300">Debug</div>
             <pre className="overflow-auto max-h-40">{debug}</pre>
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="bg-slate-800 border border-slate-700 rounded p-2">
+                <div className="font-medium text-slate-200 mb-1">Available WiFi PDFs</div>
+                {!dbgWifiPdfs ? (
+                  <div className="text-slate-500">Loading…</div>
+                ) : dbgWifiPdfs.length === 0 ? (
+                  <div className="text-slate-500">None found</div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {dbgWifiPdfs.map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => { setViewType('wifi-public'); setSelectedPdf(f); setDebug((d)=>d+`test_wifi: ${f}\n`); }}
+                        className="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-100"
+                        title={`/api/pdf?name=${encodeURIComponent(f)}&scope=wifi`}
+                      >{f}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="bg-slate-800 border border-slate-700 rounded p-2">
+                <div className="font-medium text-slate-200 mb-1">Available Cabin PDFs</div>
+                {!dbgCabinPdfs ? (
+                  <div className="text-slate-500">Loading…</div>
+                ) : dbgCabinPdfs.length === 0 ? (
+                  <div className="text-slate-500">None found</div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {dbgCabinPdfs.map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => { setViewType('cabin-view'); setSelectedPdf(f); setDebug((d)=>d+`test_cabin: ${f}\n`); }}
+                        className="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-slate-100"
+                        title={`/api/pdf?name=${encodeURIComponent(f)}&scope=cabin`}
+                      >{f}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </header>
