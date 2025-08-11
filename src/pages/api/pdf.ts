@@ -37,8 +37,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const prerenderBypass = req.headers['x-prerender-bypass'] as string | undefined
     if (prerenderBypass) headers['x-prerender-bypass'] = prerenderBypass
 
-    const resp = await fetch(url, { headers })
-    if (!resp.ok) {
+    let resp = await fetch(url, { headers })
+    if (!resp.ok && resp.status === 404) {
+      // Fallback: fetch from GitHub raw content (handles previews missing static assets)
+      const owner = 'beatyc5'
+      const repo = 'beaty-pro-dashboard'
+      const sha = process.env.VERCEL_GIT_COMMIT_SHA || 'main'
+      const ghPath = scope === 'cabin' ? `public/pdfs/cabin/${name}` : `public/pdfs/${name}`
+      const ghUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${sha}/${ghPath}`
+      resp = await fetch(ghUrl)
+      if (!resp.ok) {
+        res.status(404).send('Not found')
+        return
+      }
+    } else if (!resp.ok) {
       res.status(resp.status).send('Not found')
       return
     }
