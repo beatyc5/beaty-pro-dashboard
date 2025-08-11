@@ -245,18 +245,14 @@ export default function ShipDrawingsPage() {
         console.log('Loading PDF from:', pdfPath);
         setDebug((d) => d + `select: ${pdfPath}\n`);
 
-        // Probe the PDF URL directly to catch CORS/headers issues on iOS
+        // Probe the PDF URL (non-blocking): some CDNs return 404 to HEAD on iOS
+        // Use GET with a small Range to avoid full download; proceed regardless of result
         try {
-          const head = await fetch(pdfPath, { method: 'HEAD' });
-          setDebug((d) => d + `probe: ${head.status} ${head.headers.get('content-type') || ''}\n`);
-          if (!head.ok) {
-            throw new Error(`PDF not reachable. status=${head.status}`);
-          }
+          const probe = await fetch(pdfPath, { method: 'GET', headers: { Range: 'bytes=0-0' }, cache: 'no-store' });
+          setDebug((d) => d + `probe: ${probe.status} ${probe.headers.get('content-type') || ''}\n`);
         } catch (e: any) {
-          setError(`Failed to fetch PDF: ${e?.message || String(e)}`);
           setDebug((d) => d + `probe_err: ${e?.message || String(e)}\n`);
-          setLoading(false);
-          return;
+          // Continue to attempt loading via PDF.js
         }
         
         // Load the PDF document
