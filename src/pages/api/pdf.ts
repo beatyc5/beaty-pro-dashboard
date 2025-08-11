@@ -51,6 +51,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return
       }
     } else if (!resp.ok) {
+      // Final fallback: GitHub Contents API with optional token for private repos
+      const token = process.env.GITHUB_TOKEN
+      if (token) {
+        const owner = 'beatyc5'
+        const repo = 'beaty-pro-dashboard'
+        const sha = process.env.VERCEL_GIT_COMMIT_SHA || 'main'
+        const ghPath = scope === 'cabin' ? `public/pdfs/cabin/${name}` : `public/pdfs/${name}`
+        const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(ghPath)}?ref=${sha}`
+        const gh = await fetch(apiUrl, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' } })
+        if (gh.ok) {
+          const j: any = await gh.json()
+          if (j && j.content && j.encoding === 'base64') {
+            const buf = Buffer.from(j.content, 'base64')
+            res.setHeader('Content-Type', 'application/pdf')
+            res.setHeader('Content-Length', String(buf.length))
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+            res.status(200)
+            res.end(buf)
+            return
+          }
+        }
+      }
       res.status(resp.status).send('Not found')
       return
     }
